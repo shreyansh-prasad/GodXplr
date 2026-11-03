@@ -1,0 +1,73 @@
+{
+  "project": "GodXplr",
+  "kit_version": "1.0.0",
+  "prepared_date": "2026-11-03",
+  "status": "bootstrap kit; no implementation phases claimed complete",
+  "copied_source_documents": [
+    {
+      "path": "docs/specs/01-ntfs-index-and-search.md",
+      "sha256": "acf0385a83473e0b74f5e7e6cd4682769a13ff2b3d496118e726d4802dd4be86",
+      "source_path": "/mnt/data/Pasted markdown (2)(1).md"
+    },
+    {
+      "path": "docs/specs/02-content-index-and-extractors.md",
+      "sha256": "c79a1f1f66ec5c25c88c64cbadfc47d49dc649dede20660193f1768056bad398",
+      "source_path": "/mnt/data/Pasted markdown (3)(1).md"
+    },
+    {
+      "path": "docs/specs/03-ui-rendering-and-performance.md",
+      "sha256": "c99ecc550bc411bb0c923f7428fefa08a87871455699db536ce6ddd1337c4fab",
+      "source_path": "/mnt/data/GodXplr_Spec_03_UI_Rendering_and_Performance.md"
+    },
+    {
+      "path": "docs/research/00-existing-godxplr-research-report-and-sources.txt",
+      "sha256": "0974a42413f5ae7348291e4b4b6bdd2493de4d3872e8e17430eead8b1eb46de2",
+      "source_path": "/mnt/data/Pasted text(20261103-142528).txt"
+    }
+  ],
+  "generated_files": [
+    "Instructions.md",
+    "README.md",
+    "agents.md",
+    "architecture/phase-roadmap.md",
+    "architecture/requirements-traceability.md",
+    "architecture/spec03-ui-subphase-map.md",
+    "architecture/system-boundaries.md",
+    "context.md",
+    "decisions.md",
+    "gemini.md",
+    "progress.md",
+    "prompts/MASTER_PROMPT.md",
+    "prompts/PHASE_INDEX.md",
+    "prompts/phases/P00-repository-audit.md",
+    "prompts/phases/P01-architecture-baseline.md",
+    "prompts/phases/P02-build-foundation.md",
+    "prompts/phases/P03-ui-benchmark-harness.md",
+    "prompts/phases/P04-main-window-shell.md",
+    "prompts/phases/P05-virtualized-file-view.md",
+    "prompts/phases/P06-async-directory-pipeline.md",
+    "prompts/phases/P07-navigation-interactions.md",
+    "prompts/phases/P08-icons-thumbnails-previews.md",
+    "prompts/phases/P09-filename-index-search.md",
+    "prompts/phases/P10-content-index-extractors.md",
+    "prompts/phases/P11-file-operations-engine.md",
+    "prompts/phases/P12-windows-shell-integration.md",
+    "prompts/phases/P13-advanced-power-features.md",
+    "prompts/phases/P14-archives-virtual-filesystems.md",
+    "prompts/phases/P15-network-cloud-mtp-providers.md",
+    "prompts/phases/P16-hardening-performance-security.md",
+    "prompts/phases/P17-distribution-default-opener.md",
+    "prompts/phases/P18-cross-platform-portability.md",
+    "rules.md",
+    "templates/adr-template.md",
+    "templates/benchmark-report-template.md",
+    "templates/phase-report-template.md",
+    "templates/subsystem-spec-template.md",
+    "workflows/architecture-change.md",
+    "workflows/benchmark.md",
+    "workflows/execute-phase.md",
+    "workflows/release-readiness.md",
+    "workflows/review-and-gate.md",
+    "workflows/start-session.md"
+  ]
+}

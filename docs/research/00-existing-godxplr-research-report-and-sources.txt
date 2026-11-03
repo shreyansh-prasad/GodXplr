@@ -1,0 +1,513 @@
+GodXplr — Research Report
+Prepared 3 Nov 2026 for Shrey. Tools studied: Everything, File Pilot, Files, Directory Opus, Windows Explorer, macOS Finder. Tags: [Certain] = backed by a source in section 11; [Likely] = my inference; [Guessing] = estimate or proposal you must approve.
+1. Executive summary
+[Certain] The benchmark tools each win on a different axis. Everything wins search speed, File Pilot wins feel, Directory Opus wins power features, and Files wins modern looks plus open-source cloud and Git integration. None wins all four, and none combines instant disk-wide search, content search and a full file manager. [Likely] That gap is where GodXplr can credibly win.
+[Certain] Windows Explorer is a moving target. In 2026 Microsoft shipped Explorer speed work, new archive support, a faster Home tab, a search overhaul and a customizable context menu (beta).
+Six findings that change the plan:
+1. [Certain] File Pilot is fast because it uses no framework: pure C, its own UI toolkit, its own D3D11/OpenGL renderer, no external libraries, one small executable. [Likely] Qt 6 will not match that feel by default, so prompt P04 sets a hard performance gate with a fallback renderer plan.
+2. [Certain] Everything is fast because it reads the NTFS Master File Table directly, keeps a compact name table in RAM and follows the USN change journal. This is reproducible but needs a privileged helper service.
+3. [Certain] Your MIT choice conflicts with popular libraries: Xapian and poppler are GPL, MuPDF is AGPL, and some Qt modules are GPL-only. The plan uses SQLite FTS5, PDFium, libarchive and Tesseract, and links Qt dynamically.
+4. [Likely] An all-drives persistent content index is your most expensive decision. Everything itself keeps content in memory and recommends exclusion filters. GodXplr needs a disk-backed index with caps, exclusions, pause/resume and idle-priority I/O.
+5. [Likely] A service running as SYSTEM can leak file names or text to users who lack permission. Content extraction must run as the signed-in user, and name results must be permission-filtered.
+6. [Certain] Matching every feature of four mature tools is years of work for their teams. [Likely] The plan keeps every feature in scope but orders it into tiers v1 to v4 with acceptance gates, so something usable exists after each phase.
+2. Scope confirmed with you
+• Product: GodXplr, a full Windows file manager in C++ with Qt 6, built by Antigravity agents, MIT licensed, for your OS course and portfolio (no required OS topics).
+• Platforms: Windows first. macOS and Linux compile in CI only and are labelled unsupported until someone tests them.
+• Must beat the others on: UI speed and feel, search speed, power features, Explorer parity (parity is cut last).
+• Search: names, contents and smart search (fuzzy, filters, regex, recency/frequency ranking, plus every search function of the benchmark tools). No AI, no paid services. Content index covers all NTFS drives, persistent, every file type with extractable text.
+• Privilege: helper service for the NTFS index.
+• Shell: real Windows context menu, everyday users, minimal and fast look, default-Explorer replacement in a later phase.
+• Distribution: installer and portable from day one.
+• Proposed by me, not chosen by you (veto any): Qt Widgets with a custom file view, SQLite FTS5, PDFium, libarchive, Tesseract, Lua scripting, Inno Setup, per-user content process.
+3. Teardown of the benchmark tools
+3.1 Everything (voidtools): best at filename search speed
+• [Certain] It reads the NTFS Master File Table directly and follows the USN journal for live updates. The database is a list of UTF-8 names, sizes, modified dates and parent pointers, held in memory, saved on exit and restored at launch. It is written in C. One write-up reports a fresh Windows 10 install (about 120,000 files) indexing in roughly one second.
+• [Certain] Version 1.5 entered beta in May 2026. It adds property indexing and sorting, natural sort, an index journal, Everything Server, a duplicate finder, virtual-folder indexing, an undo system, FAT indexing, dark mode, background updates and weighted searches.
+• [Certain] Content indexing exists in 1.5 but the developer describes it as a hidden advanced feature with limited support. Content is stored in memory, default types are doc, docx, pdf, txt, xls and xlsx, it uses the system IFilter, and exclusion filters are advised for performance.
+• Weak spots: [Certain] non-NTFS volumes are indexed by slower scanning. [Likely] It is a search tool, not a file manager, and its content search does not scale to every file on every drive.
+3.2 File Pilot: best at interface feel
+• [Certain] Written in C since full-time work began in 2022, with its own platform layer, renderer (D3D11 and OpenGL), UI framework, containers, string and math code, and essentially no external libraries. It ships as a single small executable (about 2 MB) with no background services and an optional built-in installer. One developer. Perpetual licence.
+• [Certain] Interface rendering moved to Direct3D in March 2026. Beta v0.8.1 (July 2026) added tree view, list view, group-by sections and per-folder view settings.
+• Features seen: command palette, inspector pane, Go To search, batch rename, bookmarks, recents tracking, thumbnail-loading control, volume usage bars, reopen closed tabs, set-as-default through the installer, drag from ZIP and from external apps, and a Windows 10 style context menu with no 'show more options' step.
+• [Certain] Roadmap items: virtual folders, MTP devices, undo/redo, network share reliability, cloud-synced folder status, in-app updates, translations. Listed as future: NTFS file-table indexing, custom Quick Access groups, ARM.
+• Weak spots: [Certain] NTFS-table search is still on the roadmap, so its disk-wide search is not Everything-class, and an early beta lacked network browsing. [Likely] No content search, scripting or FTP.
+3.3 Files: best at modern UI and open-source integration
+• [Certain] Open-source WinUI/Fluent file manager. v4.0 introduced the Omnibar, dual pane, a Status Center, many cloud-drive integrations and clone-on-drop for GitHub URLs. Later releases add a details pane, 7z and compression options, on-demand folder size and network-discovery hints. Version 4.2 shipped in 2026.
+• Weak spots: [Likely] user comments report slower startup and sluggishness compared with File Pilot (anecdotal, not measured).
+3.4 Directory Opus: best at power features
+• [Certain] Native multi-threaded 64-bit C++ with speed as the first design principle. Explorer Replacement mode, single or dual file displays with folder trees, tabs, viewer pane, metadata pane (view and edit EXIF, MP3, PDF tags), batch rename with a macro recorder and scripted rename, FTP plus ZIP/7z/RAR browsed like folders, synchronize, duplicate finder, colour coding, status icons, star ratings, tags, descriptions, collections, saved layouts, folder formats, a scripting interface with scriptable dialogs, and high-DPI support. First released in 1990 as an Amiga two-panel manager.
+• Weak spots: [Likely] steep configuration curve, paid upgrades (Opus 13 uses an upgrade-subscription model on a perpetual licence), closed source, and no MFT-style instant index.
+3.5 Windows Explorer (state in Nov 2026)
+• [Certain] 2026 changes: performance work in KB5095093 (optional in June, mandatory in July), a Home-tab fix, a dark-mode white-flash fix, new archive support, a speed and relevance overhaul for search across This PC, faster large-file deletion, a WinUI 3 Properties dialog, and a customizable context menu in Beta build 26220.9757. Windows 11 26H2 began rolling out in September 2026.
+• [Likely] The parity baseline keeps moving, so parity checks must be re-run before release.
+3.6 macOS Finder (reference only, not a target platform)
+• [Certain] Icon, list, column and gallery views; Quick Look on Space; tags; Smart Folders; tabs; a Tahoe Spotlight overhaul with a file-search mode, filters and previews; custom folder colours and emoji. Column view has no sidebar tree.
+• Worth copying: Quick Look style instant preview, Smart Folders, gallery view.
+4. Master feature matrix
+Legend: ✓ = sourced in this research; ~ = general knowledge, to be verified by the agent in P00; – = not found or not offered; ◔ = on the vendor roadmap. Tier = build order (v1 first). Nothing is dropped.
+Feature
+Everything
+File Pilot
+Files
+Opus
+Explorer
+Finder
+Tier
+Tabs
+–
+✓
+~
+✓
+✓
+✓
+v1
+Dual pane
+–
+~
+✓
+✓
+–
+–
+v2
+Folder tree
+–
+✓
+~
+✓
+~
+–
+v1
+Details / list / grid / thumbnail views
+~
+✓
+~
+✓
+~
+✓
+v1
+Per-folder view memory
+–
+✓
+~
+✓
+~
+~
+v2
+Group-by sections
+–
+✓
+~
+✓
+~
+✓
+v2
+Preview / inspector pane
+✓
+✓
+✓
+✓
+~
+✓
+v2
+Disk-usage bars / folder size
+–
+✓
+✓
+✓
+–
+–
+v1
+Classic shell context menu
+–
+✓
+~
+~
+✓
+–
+v1
+Thumbnails, dark mode, high-DPI
+✓
+✓
+✓
+✓
+✓
+✓
+v1
+Command palette / omnibar
+–
+✓
+✓
+–
+–
+–
+v1
+Instant whole-disk filename search
+✓
+✓
+–
+~
+✓
+✓
+v1
+NTFS MFT + USN index
+✓
+◔
+–
+–
+–
+–
+v1
+Regex, operators, size/date filters
+✓
+–
+–
+~
+~
+✓
+v1
+Content search (persistent index)
+✓
+–
+–
+~
+~
+✓
+v2
+Fuzzy / typo-tolerant search
+–
+~
+–
+–
+–
+–
+v1
+Recency / frequency ranking
+–
+✓
+–
+–
+~
+✓
+v1
+Saved searches / smart folders
+~
+–
+–
+~
+~
+✓
+v2
+Batch rename
+✓
+✓
+~
+✓
+–
+~
+v2
+Duplicate finder
+✓
+–
+–
+✓
+–
+–
+v2
+Undo / redo of file operations
+✓
+◔
+–
+~
+~
+✓
+v2
+Tags, labels, colour coding
+–
+–
+~
+✓
+–
+✓
+v2
+Metadata view / edit
+✓
+~
+~
+✓
+~
+✓
+v2
+Custom hotkeys, themes, layouts
+~
+✓
+✓
+✓
+–
+–
+v3
+Archives browsed as folders
+–
+◔
+~
+✓
+✓
+–
+v3
+Phone / MTP devices
+–
+◔
+~
+✓
+✓
+–
+v3
+Cloud-synced folder status
+–
+◔
+✓
+~
+✓
+✓
+v3
+FTP / SFTP / network shares
+~
+◔
+~
+✓
+~
+~
+v3
+Folder sync / compare
+–
+–
+–
+✓
+–
+–
+v3
+Scripting / automation
+–
+–
+–
+✓
+–
+~
+v3
+Git integration
+–
+–
+✓
+–
+–
+–
+v3
+Property / virtual-folder indexing
+✓
+◔
+–
+–
+~
+~
+v3
+Replace Explorer as default
+–
+✓
+✓
+✓
+n/a
+n/a
+v4
+5. Technical findings
+5.1 Why Everything is fast, and what to copy
+[Certain] Direct MFT read, an in-memory name table, and USN journal tailing. [Likely] GodXplr copies this with a service that opens each NTFS volume read-only, enumerates records with the documented FSCTL_QUERY_USN_JOURNAL, FSCTL_ENUM_USN_DATA and FSCTL_READ_USN_JOURNAL controls, and sends compact snapshots plus deltas to the UI process. Non-NTFS volumes and portable mode need a parallel crawler fallback, which is slower (Everything has the same limit).
+5.2 Why File Pilot feels instant, and what Qt costs
+[Certain] File Pilot has no framework between it and the OS. [Likely] Qt adds overhead from widget and event machinery, UTF-16 string conversions, model/view signals and per-row shell calls. Tactics that close most of the gap (all [Likely]):
+• A custom flat item model with names in an arena, no per-row QObject, uniform row height, painting only visible rows.
+• Enumeration with FindFirstFileExW using the basic-info level and large fetch, on worker threads, streaming results into the model in batches.
+• Folder sizes, counts and metadata computed in the background and applied asynchronously (File Pilot does this too).
+• Icons and thumbnails loaded asynchronously from an LRU cache; no shell call on the UI thread.
+• Incremental sorting and stable selection while results stream in.
+[Certain] Qt's own QFileSystemModel has long-standing reports of freezing and slow sorting on large folders, so it is banned in this project. [Likely] Gate P04: scrolling a 100,000-entry folder must hold 60 fps with no frame over 16 ms. If the gate fails, only the file view is swapped for a Qt Quick or QRhi-rendered component; the model and core stay.
+5.3 Native Windows context menu
+[Certain] The shell exposes IContextMenu, IContextMenu2 and IContextMenu3, and owner-drawn items require forwarding menu messages (HandleMenuMsg2). [Likely] Plan: get IContextMenu from the item's IShellFolder (or SHCreateDefaultContextMenu), call QueryContextMenu into an HMENU, show it with TrackPopupMenuEx on the top-level window, forward WM_DRAWITEM, WM_MEASUREITEM and WM_MENUCHAR from a Qt native event filter, then InvokeCommand with the Unicode info structure. [Certain] File Pilot shows the classic Windows 10 style menu with no 'show more options' step. [Likely] That is the achievable meaning of 'real Windows menu' for an unpackaged app. Third-party handlers can hang or crash, so calls need a watchdog and the UI must survive a bad handler.
+5.4 Search engine design
+• Names: in-memory arrays with parent pointers, case-folded copies, per-column sort orders, and result reuse when a query only extends the previous one. [Likely]
+• Syntax: a superset of Everything's operators (space = AND, | = OR, ! = NOT, quotes, wildcards, regex:, size:, dm:, dc:, da:, ext:, path:, content:, case:, wholeword:). [Likely]
+• Fuzzy: subsequence scoring in the style of fuzzy finders plus edit-distance 1 for short tokens. Ranking = match score + recency + frequency from a local usage database. [Likely]
+• No AI, no network, no cost, as you required.
+5.5 Content index design
+• Storage: SQLite FTS5 with the trigram tokenizer gives substring and phrase search with no server. [Likely] Tantivy (Rust, permissive) is the alternative but adds a second toolchain. [Certain] Xapian is a good C++ engine but GPL, so it is rejected.
+• Pipeline: USN change feed, then an extraction queue, then extractor plugins, then one FTS5 shard per volume, then merged queries. [Likely]
+• Extractors: text and code with encoding detection; OOXML (docx, xlsx, pptx) through zip plus XML parsing; PDF through PDFium; archives through libarchive (zip, 7z, rar read, searching member text); OCR through Tesseract for images and scanned PDFs as the last tier. Video, encrypted and binary files get name and metadata only, so 'everything' means every file with extractable text. [Likely]
+• Controls: exclusion rules (system folders, build output, VCS internals), per-file size cap, per-type toggles, pause on battery, idle I/O priority, resume after a crash, and an up-front size and time estimate. Content lives on disk, not in RAM. [Likely]
+• [Guessing] Index size will land somewhere between 20% and 60% of the indexed text volume. We measure it in P11 before promising anything.
+5.6 Helper service and security
+• [Likely] The service uses the least privilege that lets it open volume handles read-only, accepts clients over a named pipe whose access list admits only interactive users, serves metadata only, and never offers arbitrary file reads.
+• [Likely] Visible search rows are permission-checked as the caller, so the service cannot show a user names they cannot see.
+• [Likely] Content extraction runs in a per-user background process, so a user's content index only holds files that user can read.
+• [Likely] Portable mode has no service, so it uses the in-process crawler and ReadDirectoryChangesW.
+5.7 License matrix (your MIT choice)
+Component
+License
+MIT-compatible
+Decision
+Qt 6 core and widgets
+LGPLv3 (also GPL)
+Yes if linked dynamically with relinking possible
+Use; never use Qt Charts, Data Visualization or Virtual Keyboard (GPL only)
+Xapian
+GPL
+No
+Reject
+poppler
+GPLv3
+No
+Reject
+MuPDF
+AGPLv3
+No
+Reject
+PDFium
+Apache-2.0
+Yes
+Use for PDF text
+SQLite (FTS5)
+Public domain [Likely]
+Yes
+Use
+libarchive
+BSD [Likely]
+Yes
+Use
+Tesseract
+Apache-2.0 [Likely]
+Yes
+Optional OCR
+Lua
+MIT [Likely]
+Yes
+Scripting
+miniz, pugixml
+MIT [Likely]
+Yes
+OOXML extraction
+Tantivy
+MIT [Likely]
+Yes
+Alternative only
+Rule for agents: record each dependency's license in CONTEXT.md before adding it; GPL and AGPL are banned.
+5.8 Default-Explorer replacement
+[Certain] Directory Opus, File Pilot (installer option since January 2026) and Files can act as the default folder opener. [Likely] The mechanism is registry verbs for folders, drives and the Win+E shortcut, which Windows updates can break. It stays in the last tier, fully reversible, with a one-click restore.
+6. Architecture (proposed)
+Component
+Runs as
+Role
+godxplr.exe
+User process
+Qt 6 UI, tabs, panes, views, command palette
+libgodxplr-core
+Static library in the UI process
+Filesystem layer, operations and undo, query engine, config, Lua host
+godxplr-indexd.exe
+Windows service
+NTFS name index from MFT and USN, snapshots and deltas over a named pipe
+godxplr-contentd.exe
+Per-user background process
+Content extraction and SQLite FTS5 index
+Platform layer
+Inside core
+src/platform/windows is real; macOS and Linux are CI stubs
+Layout: src/ui, src/core, src/platform, src/search, src/index, src/service, src/ipc, tests, tools, installer, docs. UI code only calls interfaces in src/core/api; it never touches the service or the index directly.
+7. Performance targets [Guessing]
+These are proposals to tune in P04, not facts. The one sourced anchor: Everything indexes about 120,000 files in roughly one second.
+Metric
+Target
+Warm start to usable window
+150 ms or less
+First paint of a 100,000-entry folder
+100 ms or less; fully sorted in 500 ms or less
+Scrolling that folder
+60 fps, no frame over 16 ms
+Name search over 1,000,000 entries
+First results page in 30 ms or less per keystroke
+First NTFS index of 1,000,000 files
+15 s or less
+Name index memory
+120 bytes or less per entry
+Idle CPU
+Under 1%
+Installer size with Qt
+Under 60 MB (File Pilot's roughly 2 MB is unreachable with Qt)
+8. Roadmap and gates
+Tier
+Prompts
+What exists afterwards
+Gate
+v1
+P00 to P10
+Usable explorer plus instant name search
+P04 performance gate; parity checklist subset passes
+v2
+P11 to P14
+Content search and core power features
+Content index meets size and CPU caps
+v3
+P15 to P17
+Virtual filesystems, network, scripting and palette
+Each provider read-only first, then writes
+v4
+P18 to P22
+Installer finish, default-Explorer replacement, perf pass, cross-platform CI, hardening
+Security review clean; benchmarks recorded
+A minimal installer and portable zip are produced from P01, as you asked; P18 finishes service install, updates and signing.
+9. Risks
+Risk
+Level
+Mitigation
+Qt feel gap versus File Pilot
+High [Likely]
+Custom model and view, P04 gate, fallback renderer
+AI-written code you cannot fully verify (one Windows machine)
+High [Likely]
+Small prompts, tests required per prompt, benchmark harness, /review workflow, Windows CI
+Scope explosion
+High [Likely]
+Tiers, progress.md, layer lock, one prompt at a time
+Content index disk and CPU cost
+High [Likely]
+Caps, estimator, pause, idle priority
+Service security flaw
+Medium [Likely]
+P07 design doc first, least privilege, review in P22
+Shell extension hangs
+Medium [Likely]
+Watchdog and timeouts around handler calls
+Windows update breaks default-Explorer replacement
+Medium [Likely]
+Last tier, reversible
+License drift from a new dependency
+Medium [Likely]
+License check rule before any install
+Mac and Linux claims
+Medium [Certain]
+Label CI-only until tested on real machines
+10. What I proposed that you can veto
+Qt Widgets with a custom file view; SQLite FTS5; PDFium; libarchive; Tesseract OCR; Lua scripting; Inno Setup installer; per-user content process; the tier order in section 8; the performance targets in section 7.
+11. Sources
+• Everything 1.5 beta notes: https://voidtools.com/forum/viewtopic.php?p=35406
+• Everything indexing design: https://voidtools.com/forum/viewtopic.php?p=60262
+• Everything content indexing: https://voidtools.com/forum/viewtopic.php?p=35395 and https://www.voidtools.com/forum/viewtopic.php?p=82783
+• Everything speed and non-NTFS limits: https://dev.to/dejavo/it-s-all-about-everything-1lf5 and https://www.techspot.com/news/93805-everything-desktop-search-windows-but-better.html
+• USN journal approach: https://github.com/LeiHao0/Fake-Everything
+• File Pilot development notes: https://filepilot.handmade.network/
+• File Pilot roadmap and release log: https://filepilot.tech/roadmap and https://filepilot.tech/starlog/2026-07-15-v0.8.1
+• File Pilot reviews: https://www.justgeek.fr/?p=145707, https://www.comss.ru/page.php?id=15780, https://bgr.com/tech/this-windows-app-is-like-file-explorer-on-steroids/
+• Files v4.0 notes and coverage: https://files.community/blog/posts/v4-0-0, https://www.comss.ru/page.php?id=17526, https://www.deskmodder.de/blog/?p=214461
+• Directory Opus: https://dopus.com, https://www.techspot.com/downloads/6949-directory-opus.html, https://geekchamp.com/?p=914048, https://gpsoft.com.au/help/opus11/documents/The_Lister.htm
+• Windows Explorer 2026: https://windowslatest.com/2026/04/19/microsoft-is-giving-windows-11-file-explorer-a-speed-boost-dark-mode-fix-and-new-archive-support-in-next-update/, https://www.windowslatest.com/2026/06/28/microsoft-begins-rolling-out-a-faster-file-explorer-on-windows-11-and-no-its-not-preloading/, https://pureinfotech.com/build-26220-9757-windows-11-25h2/, https://www.windowslatest.com/2026/07/26/windows-11s-file-explorer-is-now-faster-at-deleting-large-files-in-a-rare-speed-win-from-microsoft/
+• macOS Finder: https://www.techradar.com/computing/mac-os/what-is-the-macos-finder-on-your-new-macbook-neo-heres-your-complete-beginners-guide-on-the-macs-file-organizer and https://support.apple.com/guide/mac-pro/apdea61be6d6/2023/mac/14
+• Shell context menu interfaces: https://learn.microsoft.com/en-us/windows/win32/Shell/context-menu-reference
+• Qt licensing: https://www.qt.io/development/open-source-lgpl-obligations and https://www.qt.io/faq/3.7.-what-are-my-obligations-when-using-qt-under-the-lgpl
+• QFileSystemModel performance reports: https://forum.qt.io/post/647207 and https://bugreports-test.qt.io/browse/QTBUG-30902
+• Search library licensing: https://www.pistack.xyz/posts/2026-10-05-embedded-full-text-search-libraries-tantivy-bleve-lucene-xapian/
+• PDF library licenses: https://pdfa.org/wp-content/uploads/2021/06/Survey-of-OpenSource-Solutions.pdf
