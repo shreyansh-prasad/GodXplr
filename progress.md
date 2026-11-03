@@ -1,9 +1,9 @@
 # GodXplr — Project Progress Ledger
 
 **Last updated:** 2026-11-03  
-**Overall status:** BUILD SYSTEM, BENCHMARK & SHELL FOUNDATION VERIFIED — P00, P01, P02, P03 & P04 PASSED — READY FOR P05  
-**Current phase:** P05 — Directory store, model and virtualized details view (Spec 03 U2)  
-**Next action:** Execute `prompts/phases/P05-virtualized-file-view.md`.
+**Overall status:** BUILD SYSTEM, BENCHMARK, SHELL FOUNDATION & VIRTUALIZED VIEW VERIFIED — P00, P01, P02, P03, P04 & P05 PASSED — READY FOR P06  
+**Current phase:** P06 — Async directory enumeration pipeline, mailbox, generations and sort (Spec 03 U3–U4)  
+**Next action:** Execute `prompts/phases/P06-async-directory-pipeline.md`.
 
 ## 1. Truthful project status
 
@@ -20,8 +20,8 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | CMake/toolchain/CI | PASS | `docs/reports/P02-completion.md` (MSVC /W4 /WX /arch:AVX2 clean). |
 | UI benchmark harness | PASS | `docs/reports/P03-completion.md` (Commit `e7a9286`). |
 | Main UI shell | PASS | `docs/reports/P04-completion.md` (11/11 CTests pass). |
-| Virtualized file surface | READY | P05 / Spec 03 U2. |
-| Directory pipeline and sorting | NOT STARTED | P06 / Spec 03 U3–U4. |
+| Virtualized file surface | PASS | P05 / Spec 03 U2 (158.5 B/row, 100 ns visible range math). |
+| Directory pipeline and sorting | READY | P06 / Spec 03 U3–U4. |
 | Tree and interaction modes | NOT STARTED | P07 / Spec 03 U5. |
 | Icons/previews/thumbnails | NOT STARTED | P08 / Spec 03 U6–U7. |
 | Search integration | S1–S8 COMPLETE | Verified with 1M benchmark (8.5 µs - 1.06 ms) & Shm IPC. |
@@ -48,8 +48,8 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | P02 | Build system, toolchain and CI foundation | PASS | `docs/reports/P02-completion.md` (MSVC /W4 /WX clean) |
 | P03 | UI benchmark harness and telemetry (Spec 03 U0) | PASS | `docs/reports/P03-completion.md` (Commit `e7a9286`) |
 | P04 | Main window shell and state skeleton (U1) | PASS | `docs/reports/P04-completion.md` (11/11 CTests pass) |
-| P05 | Directory store, model and virtualized details view (U2) | READY | — |
-| P06 | Async enumeration, mailbox, generations and sort (U3–U4) | NOT STARTED | — |
+| P05 | Directory store, model and virtualized details view (U2) | PASS | `docs/reports/P05-completion.md` (12/12 CTests pass) |
+| P06 | Async enumeration, mailbox, generations and sort (U3–U4) | READY | — |
 | P07 | Sidebar/tree, view modes and input interactions (U5) | NOT STARTED | — |
 | P08 | Icons, thumbnails, gallery and previews (U6–U7) | NOT STARTED | — |
 | P09 | Filename index + search engine (Spec 01 S0–S12) | NOT STARTED | — |
@@ -65,7 +65,12 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 
 ## 4. Completed phase reports
 
-No implementation phases completed yet. Add links to immutable or version-controlled phase reports here after each PASS.
+- `docs/reports/P00-completion.md` (Audit and toolchain verification)
+- `docs/reports/P01-completion.md` (Integrated architecture baseline and ADRs)
+- `docs/reports/P02-completion.md` (CMake, MSVC /W4 /WX /arch:AVX2 build foundation)
+- `docs/reports/P03-completion.md` (Telemetry schema, dataset generator, baseline benchmark)
+- `docs/reports/P04-completion.md` (NavigationCoordinator, TabState, ThemeManager, BreadcrumbParser)
+- `docs/reports/P05-completion.md` (DirectoryStore, VirtualSelectionModel, DetailsLayout O(1) math)
 
 ## 5. How to update this file
 

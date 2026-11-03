@@ -46,6 +46,12 @@ add_executable(test-navigation-state
 target_link_libraries(test-navigation-state PRIVATE godxplr-ui-state godxplr-core)
 add_test(NAME UI.NavigationState COMMAND test-navigation-state)
 
+add_executable(test-virtualized-view
+    unit/ui/virtualized_view_tests.cpp
+)
+target_link_libraries(test-virtualized-view PRIVATE godxplr-ui-state godxplr-core)
+add_test(NAME UI.VirtualizedView COMMAND test-virtualized-view)
+
 if(WIN32)
     add_executable(test-win32-common
         unit/platform/win32_common_tests.cpp

@@ -8,6 +8,15 @@ add_library(godxplr-ui-state STATIC
     shell/include/godxplr/ui/shell/breadcrumb.h
     shell/include/godxplr/ui/shell/action_registry.h
     shell/src/breadcrumb.cpp
+    model/include/godxplr/ui/model/geometry_types.h
+    model/include/godxplr/ui/model/directory_entry.h
+    model/include/godxplr/ui/model/directory_store.h
+    model/include/godxplr/ui/model/selection_model.h
+    model/src/directory_store.cpp
+    model/src/selection_model.cpp
+    view/include/godxplr/ui/view/file_layout.h
+    view/include/godxplr/ui/view/details_layout.h
+    view/src/details_layout.cpp
 )
 
 target_include_directories(godxplr-ui-state
@@ -15,6 +24,8 @@ target_include_directories(godxplr-ui-state
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/state/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/theme/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/shell/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/model/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/view/include>
         $<INSTALL_INTERFACE:include>
 )
 
