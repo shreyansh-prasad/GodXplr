@@ -20,3 +20,4 @@ size_t scanArenaScalar(const NameIndex& index,
                        size_t maxMatches = 1000);
 
 } // namespace gx::search
+

@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godxplr.org/schemas/benchmark-v1.json",
+  "title": "GodXplr Benchmark Report Schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "timestamp_iso",
+    "environment",
+    "dataset_manifest",
+    "scenario",
+    "samples",
+    "metrics"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "timestamp_iso": {
+      "type": "string"
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "app_commit",
+        "compiler",
+        "qt_version",
+        "os_build",
+        "cpu",
+        "cpu_cores",
+        "ram_gb"
+      ],
+      "properties": {
+        "app_commit": { "type": "string" },
+        "compiler": { "type": "string" },
+        "qt_version": { "type": "string" },
+        "os_build": { "type": "string" },
+        "cpu": { "type": "string" },
+        "cpu_cores": { "type": "integer" },
+        "ram_gb": { "type": "number" },
+        "storage": { "type": "string" },
+        "display": { "type": "string" },
+        "dpi_scale": { "type": "number" }
+      }
+    },
+    "dataset_manifest": {
+      "type": "object",
+      "required": [
+        "seed",
+        "entry_count",
+        "file_count",
+        "directory_count",
+        "manifest_hash"
+      ],
+      "properties": {
+        "seed": { "type": "integer" },
+        "entry_count": { "type": "integer" },
+        "file_count": { "type": "integer" },
+        "directory_count": { "type": "integer" },
+        "total_bytes": { "type": "integer" },
+        "manifest_hash": { "type": "string" }
+      }
+    },
+    "scenario": {
+      "type": "string"
+    },
+    "samples": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "p50_ms",
+        "p95_ms",
+        "p99_ms",
+        "max_ms",
+        "min_ms",
+        "mean_ms",
+        "working_set_mb"
+      ],
+      "properties": {
+        "p50_ms": { "type": "number" },
+        "p90_ms": { "type": "number" },
+        "p95_ms": { "type": "number" },
+        "p99_ms": { "type": "number" },
+        "max_ms": { "type": "number" },
+        "min_ms": { "type": "number" },
+        "mean_ms": { "type": "number" },
+        "stddev_ms": { "type": "number" },
+        "working_set_mb": { "type": "number" },
+        "private_bytes_mb": { "type": "number" }
+      }
+    }
+  }
+}

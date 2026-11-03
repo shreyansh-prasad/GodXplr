@@ -10,6 +10,56 @@ NameIndex::NameIndex() {
     reserve(1024, 32768);
 }
 
+NameIndex::NameIndex(NameIndex&& other) noexcept {
+    std::unique_lock<std::shared_mutex> lock(other.mutex_);
+    entryCount_ = other.entryCount_;
+    activeCount_ = other.activeCount_;
+    nameOff_ = std::move(other.nameOff_);
+    nameLen_ = std::move(other.nameLen_);
+    parent_ = std::move(other.parent_);
+    frn_ = std::move(other.frn_);
+    size_ = std::move(other.size_);
+    mtime_ = std::move(other.mtime_);
+    flags_ = std::move(other.flags_);
+    letters_ = std::move(other.letters_);
+    arenaOrig_ = std::move(other.arenaOrig_);
+    arenaFold_ = std::move(other.arenaFold_);
+    offsetMap_ = std::move(other.offsetMap_);
+    frnToIdMap_ = std::move(other.frnToIdMap_);
+    freeList_ = std::move(other.freeList_);
+    pendingParents_ = std::move(other.pendingParents_);
+    other.entryCount_ = 0;
+    other.activeCount_ = 0;
+}
+
+NameIndex& NameIndex::operator=(NameIndex&& other) noexcept {
+    if (this != &other) {
+        std::unique_lock<std::shared_mutex> lockThis(mutex_, std::defer_lock);
+        std::unique_lock<std::shared_mutex> lockOther(other.mutex_, std::defer_lock);
+        std::lock(lockThis, lockOther);
+
+        entryCount_ = other.entryCount_;
+        activeCount_ = other.activeCount_;
+        nameOff_ = std::move(other.nameOff_);
+        nameLen_ = std::move(other.nameLen_);
+        parent_ = std::move(other.parent_);
+        frn_ = std::move(other.frn_);
+        size_ = std::move(other.size_);
+        mtime_ = std::move(other.mtime_);
+        flags_ = std::move(other.flags_);
+        letters_ = std::move(other.letters_);
+        arenaOrig_ = std::move(other.arenaOrig_);
+        arenaFold_ = std::move(other.arenaFold_);
+        offsetMap_ = std::move(other.offsetMap_);
+        frnToIdMap_ = std::move(other.frnToIdMap_);
+        freeList_ = std::move(other.freeList_);
+        pendingParents_ = std::move(other.pendingParents_);
+        other.entryCount_ = 0;
+        other.activeCount_ = 0;
+    }
+    return *this;
+}
+
 void NameIndex::reserve(size_t capacity, size_t arenaCapacity) {
     nameOff_.reserve(capacity);
     nameLen_.reserve(capacity);
@@ -90,10 +140,15 @@ EntryId NameIndex::add(uint64_t frn, uint64_t parentFrn, std::string_view name,
     flags_[id] = flags;
     letters_[id] = computeLetterMask(folded);
 
-    // Resolve parent ID if parentFrn exists in map
+    // Resolve parent ID if parentFrn exists in map, or schedule for post-resolution
     if (parentFrn != 0) {
         auto it = frnToIdMap_.find(parentFrn);
-        parent_[id] = (it != frnToIdMap_.end()) ? it->second : kNoEntry;
+        if (it != frnToIdMap_.end()) {
+            parent_[id] = it->second;
+        } else {
+            parent_[id] = kNoEntry;
+            pendingParents_.emplace_back(id, parentFrn);
+        }
     } else {
         parent_[id] = kNoEntry;
     }
@@ -170,6 +225,33 @@ void NameIndex::move(EntryId id, EntryId newParentId) {
     parent_[id] = newParentId;
 }
 
+void NameIndex::moveByFrn(EntryId id, uint64_t newParentFrn) {
+    if (id >= entryCount_ || isDeleted(id)) {
+        return;
+    }
+    auto it = frnToIdMap_.find(newParentFrn);
+    if (it != frnToIdMap_.end()) {
+        parent_[id] = it->second;
+    } else {
+        parent_[id] = kNoEntry;
+        pendingParents_.emplace_back(id, newParentFrn);
+    }
+}
+
+void NameIndex::updateMetadata(EntryId id, uint64_t size, uint64_t mtime, uint8_t flags) {
+    if (id >= entryCount_ || isDeleted(id)) {
+        return;
+    }
+    if (size != 0) {
+        size_[id] = size;
+    }
+    if (mtime != 0) {
+        mtime_[id] = mtime;
+    }
+    uint8_t wasDeleted = flags_[id] & kDeleted;
+    flags_[id] = (flags & ~kDeleted) | wasDeleted;
+}
+
 EntryId NameIndex::findByFrn(uint64_t frn) const {
     auto it = frnToIdMap_.find(frn);
     if (it != frnToIdMap_.end()) {
@@ -242,6 +324,19 @@ std::string NameIndex::buildPath(EntryId id) const {
     return path;
 }
 
+void NameIndex::resolveParents() {
+    for (const auto& [childId, parentFrn] : pendingParents_) {
+        if (childId < entryCount_ && !isDeleted(childId) && parent_[childId] == kNoEntry) {
+            auto it = frnToIdMap_.find(parentFrn);
+            if (it != frnToIdMap_.end()) {
+                parent_[childId] = it->second;
+            }
+        }
+    }
+    pendingParents_.clear();
+    pendingParents_.shrink_to_fit();
+}
+
 std::string_view NameIndex::getName(EntryId id) const {
     if (id >= entryCount_ || isDeleted(id)) {
         return {};
@@ -275,3 +370,4 @@ size_t NameIndex::totalMemoryBytes() const noexcept {
 }
 
 } // namespace gx
+

@@ -2,6 +2,7 @@
 #include "godxplr/core/query_parser.h"
 #include "godxplr/core/simd_search.h"
 #include <algorithm>
+#include <shared_mutex>
 
 namespace gx {
 
@@ -78,6 +79,7 @@ bool SearchEngine::matchesFilters(EntryId id, const query::Node* node) {
 
 ResultPage SearchEngine::search(std::string_view queryString, const QueryOptions& opts) {
     ResultPage page;
+    std::shared_lock<std::shared_mutex> lock(index_.mutex());
     if (queryString.empty() || index_.size() == 0) {
         return page;
     }
@@ -166,3 +168,4 @@ ResultPage SearchEngine::search(std::string_view queryString, const QueryOptions
 }
 
 } // namespace gx
+

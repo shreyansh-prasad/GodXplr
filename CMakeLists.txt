@@ -79,6 +79,8 @@ if(GODXPLR_HAVE_QT)
     add_subdirectory(src/app)
 endif()
 
+add_subdirectory(tools)
+
 if(BUILD_TESTING)
     enable_testing()
     add_subdirectory(tests)

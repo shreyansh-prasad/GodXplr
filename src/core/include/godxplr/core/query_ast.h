@@ -102,3 +102,4 @@ struct MultiNode : public Node {
 };
 
 } // namespace gx::query
+

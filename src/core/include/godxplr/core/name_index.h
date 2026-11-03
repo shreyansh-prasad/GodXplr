@@ -7,6 +7,7 @@
 #include <vector>
 #include <unordered_map>
 #include <span>
+#include <shared_mutex>
 
 namespace gx {
 
@@ -17,7 +18,10 @@ struct OffsetIdPair {
     auto operator<=>(const OffsetIdPair&) const = default;
 };
 
+class IndexSerializer;
+
 class NameIndex {
+    friend class IndexSerializer;
 public:
     NameIndex();
     ~NameIndex() = default;
@@ -25,8 +29,8 @@ public:
     // Disallow accidental heavy copies; enable move semantics
     NameIndex(const NameIndex&) = delete;
     NameIndex& operator=(const NameIndex&) = delete;
-    NameIndex(NameIndex&&) noexcept = default;
-    NameIndex& operator=(NameIndex&&) noexcept = default;
+    NameIndex(NameIndex&& other) noexcept;
+    NameIndex& operator=(NameIndex&& other) noexcept;
 
     // Resizes and preallocates capacity for N entries
     void reserve(size_t capacity, size_t arenaCapacity = 0);
@@ -43,6 +47,13 @@ public:
 
     // Moves an entry to a new parent
     void move(EntryId id, EntryId newParentId);
+    void moveByFrn(EntryId id, uint64_t newParentFrn);
+
+    // Updates metadata (size, mtime, flags)
+    void updateMetadata(EntryId id, uint64_t size, uint64_t mtime, uint8_t flags);
+
+    // Reader-writer mutex for thread-safe concurrent mutations and queries
+    [[nodiscard]] std::shared_mutex& mutex() const noexcept { return mutex_; }
 
     // Resolves entry ID by FRN in O(1)
     [[nodiscard]] EntryId findByFrn(uint64_t frn) const;
@@ -52,6 +63,9 @@ public:
 
     // Reconstructs the full path by traversing parent pointers
     [[nodiscard]] std::string buildPath(EntryId id) const;
+
+    // Resolves all unresolved parent FRNs to EntryIds in one post-enumeration pass
+    void resolveParents();
 
     // Accessors
     [[nodiscard]] size_t size() const noexcept { return entryCount_; }
@@ -106,6 +120,13 @@ private:
 
     // Free list for recycled entry IDs
     std::vector<EntryId> freeList_;
+
+    // Pending parents to resolve post-enumeration
+    std::vector<std::pair<EntryId, uint64_t>> pendingParents_;
+
+    // Mutex for thread-safe concurrent readers and writers
+    mutable std::shared_mutex mutex_;
 };
 
 } // namespace gx
+

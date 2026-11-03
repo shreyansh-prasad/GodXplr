@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "timestamp_iso": "2026-11-03T17:44:06Z",
+  "environment": {
+    "app_commit": "0d06e67",
+    "compiler": "MSVC 1944",
+    "qt_version": "None (Headless)",
+    "os_build": "Windows 11 Build 26200",
+    "cpu": "13th Gen Intel(R) Core(TM) i5-13450HX",
+    "cpu_cores": 16,
+    "ram_gb": 23.715,
+    "storage": "NVMe SSD (NTFS)",
+    "display": "1536x864@60Hz",
+    "dpi_scale": 1.000
+  },
+  "dataset_manifest": {
+    "seed": 42,
+    "entry_count": 100000,
+    "file_count": 92000,
+    "directory_count": 8000,
+    "total_bytes": 1983694990461,
+    "manifest_hash": "59358f6ae245a452f5dda752fed66f17"
+  },
+  "scenario": "dataset-generation-100k",
+  "samples": 10,
+  "metrics": {
+    "p50_ms": 54.922,
+    "p90_ms": 59.212,
+    "p95_ms": 59.212,
+    "p99_ms": 59.212,
+    "max_ms": 60.610,
+    "min_ms": 52.591,
+    "mean_ms": 56.333,
+    "stddev_ms": 2.747,
+    "working_set_mb": 23.895,
+    "private_bytes_mb": 20.785
+  }
+}

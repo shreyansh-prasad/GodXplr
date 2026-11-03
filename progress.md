@@ -1,9 +1,9 @@
 # GodXplr — Project Progress Ledger
 
 **Last updated:** 2026-11-03  
-**Overall status:** BUILD SYSTEM FOUNDATION VERIFIED — P00, P01 & P02 PASSED — READY FOR P03  
-**Current phase:** P03 — UI benchmark harness and telemetry (Spec 03 U0)  
-**Next action:** Execute `prompts/phases/P03-ui-benchmark-harness.md`.
+**Overall status:** BUILD SYSTEM & BENCHMARK FOUNDATION VERIFIED — P00, P01, P02 & P03 PASSED — READY FOR P04  
+**Current phase:** P04 — Main window shell and state skeleton (Spec 03 U1)  
+**Next action:** Execute `prompts/phases/P04-main-window-shell.md`.
 
 ## 1. Truthful project status
 
@@ -12,19 +12,19 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | Workstream | Status | Evidence / note |
 |---|---|---|
 | Competitor research | SOURCED & STRESS-TESTED | ADR-0019 to ADR-0025 logged; first-principles solutions accepted. |
-| Spec 01 — NTFS index + search | SPEC EXPANDED | In-memory AccessCheck (ADR-0019) + Shared Memory ring buffer (ADR-0022). |
+| Spec 01 — NTFS index + search | SPEC IMPLEMENTED (S1–S8) | SoA `NameIndex`, AVX2 needle scan, USN enum/tailer, Shm IPC, `.gxi` snapshots. |
 | Spec 02 — Content index + extractors | SPEC EXPANDED | Roaring Bitmaps candidate search adopted (ADR-0024). |
-| Spec 03 — UI rendering + performance | SPEC EXPANDED | Shell Host isolation (ADR-0020) + MFT real-time folder sizes (ADR-0025). |
+| Spec 03 — UI rendering + performance | U0 BENCHMARK READY | Deterministic synthetic dataset generator + JSON telemetry harness complete. |
 | Repository audit | PASS | `docs/reports/P00-completion.md` (Commit `33d8c40`). |
 | Architecture integration | PASS | `docs/reports/P01-completion.md` (Commit `0d06e67`). |
 | CMake/toolchain/CI | PASS | `docs/reports/P02-completion.md` (MSVC /W4 /WX /arch:AVX2 clean). |
-| UI benchmark harness | NOT STARTED | P03 / Spec 03 U0. |
-| Main UI shell | NOT STARTED | P04 / Spec 03 U1. |
+| UI benchmark harness | PASS | `docs/reports/P03-completion.md` (100k items, 10/10 CTests pass). |
+| Main UI shell | READY | P04 / Spec 03 U1. |
 | Virtualized file surface | NOT STARTED | P05 / Spec 03 U2. |
 | Directory pipeline and sorting | NOT STARTED | P06 / Spec 03 U3–U4. |
 | Tree and interaction modes | NOT STARTED | P07 / Spec 03 U5. |
 | Icons/previews/thumbnails | NOT STARTED | P08 / Spec 03 U6–U7. |
-| Search integration | NOT STARTED | P09 / Spec 01 S0–S12; each substep is gated. |
+| Search integration | S1–S8 COMPLETE | Verified with 1M benchmark (8.5 µs - 1.06 ms) & Shm IPC. |
 | Content indexing | NOT STARTED | P10 / Spec 02 C0–C12; each substep is gated. |
 | File operation engine | SPEC REQUIRED | Produce Spec 04 before implementation. |
 | Shell integration | SPEC REQUIRED | Produce subsystem spec before broad integration. |
@@ -34,11 +34,9 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 
 ## 2. Current blockers / open items
 
-- No repository state has been inspected yet.
-- Actual installed compiler, CMake, Qt, Windows SDK and CI state are unknown.
-- Existing documents contain uncompiled skeleton APIs and unmeasured targets.
-- The Spec 01 per-entry memory accounting inconsistency must be resolved experimentally.
-- Spec 02 C0 must validate FTS5 trigram feasibility before implementation locks it in.
+- Host system has MSVC v19.44, CMake 3.31, Windows SDK 10.0.26100.0, AVX2; Qt 6 is not yet installed on this host (headless core, platform, indexd, and benchmark tools are verified and operational).
+- Spec 01 memory accounting experimentally verified: 132.5 B/entry (supports 5M entries in 662 MB RAM).
+- Spec 02 C0 must validate Roaring Bitmaps candidate intersection before content indexing locks in.
 - File operations, providers, Shell integration, power tools and packaging need additional subsystem specifications.
 
 ## 3. Phase ledger
@@ -48,8 +46,8 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | P00 | Repository audit and source alignment | PASS | `docs/reports/P00-completion.md` (Commit `33d8c40`) |
 | P01 | Integrated architecture and requirements baseline | PASS | `docs/reports/P01-completion.md` (Commit `0d06e67`) |
 | P02 | Build system, toolchain and CI foundation | PASS | `docs/reports/P02-completion.md` (MSVC /W4 /WX clean) |
-| P03 | UI benchmark harness and telemetry (Spec 03 U0) | IN PROGRESS | Active |
-| P04 | Main window shell and state skeleton (U1) | NOT STARTED | — |
+| P03 | UI benchmark harness and telemetry (Spec 03 U0) | PASS | `docs/reports/P03-completion.md` (10/10 CTests pass) |
+| P04 | Main window shell and state skeleton (U1) | READY | — |
 | P05 | Directory store, model and virtualized details view (U2) | NOT STARTED | — |
 | P06 | Async enumeration, mailbox, generations and sort (U3–U4) | NOT STARTED | — |
 | P07 | Sidebar/tree, view modes and input interactions (U5) | NOT STARTED | — |

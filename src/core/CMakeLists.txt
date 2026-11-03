@@ -7,11 +7,13 @@ add_library(godxplr-core STATIC
     include/godxplr/core/query_ast.h
     include/godxplr/core/query_parser.h
     include/godxplr/core/search_engine.h
+    include/godxplr/core/index_serializer.h
     src/entry_key.cpp
     src/name_index.cpp
     src/simd_search.cpp
     src/query_parser.cpp
     src/search_engine.cpp
+    src/index_serializer.cpp
 )
 
 target_include_directories(godxplr-core

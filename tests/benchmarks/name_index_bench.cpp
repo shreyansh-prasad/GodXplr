@@ -61,3 +61,4 @@ int main() {
     run_benchmark(1000000);
     return 0;
 }
+

@@ -189,3 +189,4 @@ size_t scanArenaAVX2(const NameIndex& index,
 }
 
 } // namespace gx::search
+

@@ -64,3 +64,4 @@ struct ResultPage {
 };
 
 } // namespace gx
+
