@@ -155,6 +155,16 @@ if(WIN32)
         godxplr-platform-win32
     )
     add_test(NAME Hardening.Security COMMAND test-hardening)
+
+    add_executable(test-distribution
+        unit/distribution/distribution_tests.cpp
+    )
+    target_link_libraries(test-distribution PRIVATE
+        godxplr-distribution
+        godxplr-platform-win32
+        godxplr-core
+    )
+    add_test(NAME Distribution.Lifecycle COMMAND test-distribution)
 endif()
 
 # Benchmark executable

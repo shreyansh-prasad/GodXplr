@@ -76,6 +76,7 @@ add_subdirectory(src/providers)
 if(WIN32)
     add_subdirectory(src/platform/windows)
     add_subdirectory(src/index)
+    add_subdirectory(src/distribution)
 endif()
 
 add_subdirectory(src/ui)
