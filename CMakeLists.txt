@@ -70,6 +70,7 @@ endif()
 add_subdirectory(src/core)
 add_subdirectory(src/content)
 add_subdirectory(src/fileops)
+add_subdirectory(src/power)
 
 if(WIN32)
     add_subdirectory(src/platform/windows)

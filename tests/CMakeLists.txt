@@ -124,6 +124,12 @@ if(WIN32)
     )
     target_link_libraries(test-shell-integration PRIVATE godxplr-platform-win32 godxplr-core)
     add_test(NAME Platform.ShellIntegration COMMAND test-shell-integration)
+
+    add_executable(test-power-features
+        unit/power/power_features_tests.cpp
+    )
+    target_link_libraries(test-power-features PRIVATE godxplr-power godxplr-fileops godxplr-platform-win32 godxplr-core)
+    add_test(NAME Power.Features COMMAND test-power-features)
 endif()
 
 # Benchmark executable

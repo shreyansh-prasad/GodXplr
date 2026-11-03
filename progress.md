@@ -1,9 +1,9 @@
 # GodXplr — Project Progress Ledger
 
 **Last updated:** 2026-11-04  
-**Overall status:** SPEC 01, SPEC 02, SPEC 04 & SPEC 05 SUBSYSTEMS COMPLETE (P00 THROUGH P12 PASSED) — READY FOR P13  
-**Current phase:** P13 — Advanced power features (Spec 06)  
-**Next action:** Execute `prompts/phases/P13-advanced-power-features.md`.
+**Overall status:** SPEC 01, SPEC 02, SPEC 04, SPEC 05 & SPEC 06 COMPLETE (P00 THROUGH P13 PASSED) — READY FOR P14  
+**Current phase:** P14 — Archives and virtual filesystem providers (Spec 07)  
+**Next action:** Execute `prompts/phases/P14-archives-virtual-filesystems.md`.
 
 ## 1. Truthful project status
 
@@ -28,6 +28,7 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | Content indexing | PASS | `docs/reports/P10-completion.md` (19/19 CTests pass). |
 | File operation engine | PASS | Spec 04 implemented; WAL journal, atomic rename, preallocated copy, conflict policies, undo/redo verified (20/20 CTests pass). |
 | Shell integration | PASS | Spec 05 implemented; IContextMenu3, CF_HDROP, properties, drag/drop verified (21/21 CTests pass). |
+| Advanced power features | PASS | Spec 06 implemented; Batch renamer, 3-tier duplicate finder, folder sync verified (22/22 CTests pass). |
 | Advanced features | SPEC REQUIRED | Define semantics and tests before implementing. |
 | Archives/network/cloud/MTP | SPEC REQUIRED | Provider and security architecture required. |
 | Release/installer | NOT STARTED | Must be late-stage after reliability/security gates. |
@@ -56,8 +57,8 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | P10 | Content index + extractors (Spec 02 C0–C12) | PASS | `docs/reports/P10-completion.md` (19/19 CTests pass) |
 | P11 | File operations engine (Spec 04 required first) | PASS | `docs/reports/P11-completion.md` (20/20 CTests pass) |
 | P12 | Native Windows Shell integration | PASS | `docs/reports/P12-completion.md` (21/21 CTests pass) |
-| P13 | Advanced power features (feature specs required) | READY | — |
-| P14 | Archives and virtual filesystem providers | BLOCKED BY SPEC | — |
+| P13 | Advanced power features (feature specs required) | PASS | `docs/reports/P13-completion.md` (22/22 CTests pass) |
+| P14 | Archives and virtual filesystem providers | READY | — |
 | P15 | Network/cloud/MTP providers | BLOCKED BY SPECS | — |
 | P16 | Reliability, performance and security hardening | NOT STARTED | — |
 | P17 | Installer, update/rollback and default opener | NOT STARTED | — |
