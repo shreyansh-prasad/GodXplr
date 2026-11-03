@@ -40,6 +40,12 @@ add_executable(test-index-serializer
 target_link_libraries(test-index-serializer PRIVATE godxplr-core)
 add_test(NAME Core.IndexSerializer COMMAND test-index-serializer)
 
+add_executable(test-portability
+    unit/core/portability_tests.cpp
+)
+target_link_libraries(test-portability PRIVATE godxplr-core)
+add_test(NAME Core.Portability COMMAND test-portability)
+
 add_executable(test-dataset-generator
     unit/bench/dataset_generator_tests.cpp
 )

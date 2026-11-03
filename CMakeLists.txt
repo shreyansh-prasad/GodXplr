@@ -81,7 +81,7 @@ endif()
 
 add_subdirectory(src/ui)
 
-if(GODXPLR_HAVE_QT)
+if(WIN32)
     add_subdirectory(src/app)
 endif()
 
