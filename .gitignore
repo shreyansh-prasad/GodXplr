@@ -1,0 +1,23 @@
+# Build directories
+build/
+bin/
+lib/
+out/
+
+# Visual Studio / MSVC artifacts
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.ipch
+
+# CMake artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Crash dumps and logs
+*.log
+*.dmp
