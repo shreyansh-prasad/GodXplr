@@ -1,7 +1,7 @@
 # Phase P12 — Completion Report
 
 - **Date:** 2026-11-04
-- **Commit:** Pending commit
+- **Commit:** `293dbcf`
 - **Status:** PASS
 - **Active substep:** Native Windows Shell Integration Complete
 
