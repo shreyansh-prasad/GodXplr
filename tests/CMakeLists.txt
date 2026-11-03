@@ -142,6 +142,19 @@ if(WIN32)
     )
     target_link_libraries(test-network-cloud PRIVATE godxplr-providers godxplr-platform-win32 godxplr-core)
     add_test(NAME Providers.NetworkCloud COMMAND test-network-cloud)
+
+    add_executable(test-hardening
+        unit/hardening/hardening_tests.cpp
+    )
+    target_link_libraries(test-hardening PRIVATE 
+        godxplr-core
+        godxplr-content
+        godxplr-fileops
+        godxplr-providers
+        godxplr-ui-state
+        godxplr-platform-win32
+    )
+    add_test(NAME Hardening.Security COMMAND test-hardening)
 endif()
 
 # Benchmark executable

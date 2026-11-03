@@ -1,9 +1,9 @@
 # GodXplr — Project Progress Ledger
 
 **Last updated:** 2026-11-04  
-**Overall status:** SPEC 01, SPEC 02, SPEC 04, SPEC 05, SPEC 06, SPEC 07 & SPEC 08 COMPLETE (P00 THROUGH P15 PASSED) — READY FOR P16  
-**Current phase:** P16 — Hardening, performance and security  
-**Next action:** Execute `prompts/phases/P16-hardening-performance-security.md`.
+**Overall status:** P00 THROUGH P16 PASSED (25/25 CTests passing 100%) — READY FOR P17  
+**Current phase:** P17 — Installer, update/rollback and default opener  
+**Next action:** Execute `prompts/phases/P17-distribution-default-opener.md`.
 
 ## 1. Truthful project status
 
@@ -61,8 +61,8 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | P12 | Native Windows Shell integration | PASS | `docs/reports/P12-completion.md` (21/21 CTests pass) |
 | P13 | Advanced power features (feature specs required) | PASS | `docs/reports/P13-completion.md` (22/22 CTests pass) |
 | P14 | Archives and virtual filesystem providers | PASS | `docs/reports/P14-completion.md` (23/23 CTests pass) |
-| P15 | Network/cloud/MTP providers | READY | — |
-| P16 | Reliability, performance and security hardening | NOT STARTED | — |
+| P15 | Network/cloud/MTP providers | PASS | `docs/reports/P15-completion.md` (Commit `9a92ce6`) |
+| P16 | Reliability, performance and security hardening | PASS | `docs/reports/P16-completion.md` (25/25 CTests pass) |
 | P17 | Installer, update/rollback and default opener | NOT STARTED | — |
 | P18 | Cross-platform CI/portability validation | NOT STARTED | — |
 
