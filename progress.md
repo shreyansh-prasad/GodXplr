@@ -1,23 +1,23 @@
 # GodXplr — Project Progress Ledger
 
 **Last updated:** 2026-11-03  
-**Overall status:** BOOTSTRAP KIT CREATED — IMPLEMENTATION NOT STARTED / NOT VERIFIED  
-**Current phase:** P00 — Repository reconnaissance and source alignment  
-**Next action:** Run `prompts/MASTER_PROMPT.md`, then `prompts/phases/P00-repository-audit.md`.
+**Overall status:** REPOSITORY AUDIT COMPLETE — P00 PASSED — READY FOR P01  
+**Current phase:** P01 — Integrated architecture and requirements baseline  
+**Next action:** Execute `prompts/phases/P01-architecture-baseline.md`.
 
 ## 1. Truthful project status
 
-This ledger starts from the supplied research/spec documents and the bootstrap kit. It does not infer that any application code exists or that any technical target has passed.
+This ledger records the verified state of the GodXplr codebase and phase gates.
 
 | Workstream | Status | Evidence / note |
 |---|---|---|
-| Competitor research | SOURCE DOCUMENT PRESENT | `docs/research/00-existing-godxplr-research-report-and-sources.txt`; freshness and claims require source audit before external claims. |
-| Spec 01 — NTFS index + search | DOCUMENT PRESENT; CODE NOT VERIFIED | `docs/specs/01-ntfs-index-and-search.md`; source labels skeleton uncompiled and known unknowns remain. |
-| Spec 02 — Content index + extractors | DOCUMENT PRESENT; FEASIBILITY NOT VERIFIED | `docs/specs/02-content-index-and-extractors.md`; C0 FTS5 trigram gate pending. |
-| Spec 03 — UI rendering + performance | DOCUMENT PRESENT; PERFORMANCE NOT VERIFIED | `docs/specs/03-ui-rendering-and-performance.md`; U0 harness and all UI phases pending. |
-| Repository audit | NOT STARTED | P00 pending. |
-| Architecture integration | NOT STARTED | P01 pending. |
-| CMake/toolchain/CI | NOT STARTED | P02 pending; inspect existing repo first. |
+| Competitor research | SOURCED & STRESS-TESTED | ADR-0019 to ADR-0025 logged; first-principles solutions accepted. |
+| Spec 01 — NTFS index + search | SPEC EXPANDED | In-memory AccessCheck (ADR-0019) + Shared Memory ring buffer (ADR-0022). |
+| Spec 02 — Content index + extractors | SPEC EXPANDED | Roaring Bitmaps candidate search adopted (ADR-0024). |
+| Spec 03 — UI rendering + performance | SPEC EXPANDED | Shell Host isolation (ADR-0020) + MFT real-time folder sizes (ADR-0025). |
+| Repository audit | PASS | `docs/reports/P00-completion.md` (Commit `7714798`). |
+| Architecture integration | IN PROGRESS | P01 currently active. |
+| CMake/toolchain/CI | NOT STARTED | P02 pending. |
 | UI benchmark harness | NOT STARTED | P03 / Spec 03 U0. |
 | Main UI shell | NOT STARTED | P04 / Spec 03 U1. |
 | Virtualized file surface | NOT STARTED | P05 / Spec 03 U2. |
@@ -45,8 +45,8 @@ This ledger starts from the supplied research/spec documents and the bootstrap k
 
 | Phase | Name | Status | Gate evidence |
 |---|---|---|---|
-| P00 | Repository audit and source alignment | NOT STARTED | — |
-| P01 | Integrated architecture and requirements baseline | NOT STARTED | — |
+| P00 | Repository audit and source alignment | PASS | `docs/reports/P00-completion.md` (Commit `7714798`) |
+| P01 | Integrated architecture and requirements baseline | IN PROGRESS | Active |
 | P02 | Build system, toolchain and CI foundation | NOT STARTED | — |
 | P03 | UI benchmark harness and telemetry (Spec 03 U0) | NOT STARTED | — |
 | P04 | Main window shell and state skeleton (U1) | NOT STARTED | — |
