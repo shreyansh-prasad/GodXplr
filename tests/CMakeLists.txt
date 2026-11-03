@@ -76,6 +76,12 @@ if(WIN32)
     )
     target_link_libraries(test-async-pipeline PRIVATE godxplr-ui-state godxplr-platform-win32 godxplr-core)
     add_test(NAME UI.AsyncPipeline COMMAND test-async-pipeline)
+
+    add_executable(test-navigation-interactions
+        unit/ui/navigation_interactions_tests.cpp
+    )
+    target_link_libraries(test-navigation-interactions PRIVATE godxplr-ui-state godxplr-platform-win32 godxplr-core)
+    add_test(NAME UI.NavigationInteractions COMMAND test-navigation-interactions)
 endif()
 
 # Benchmark executable

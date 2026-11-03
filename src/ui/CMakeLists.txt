@@ -7,16 +7,29 @@ add_library(godxplr-ui-state STATIC
     theme/src/theme_manager.cpp
     shell/include/godxplr/ui/shell/breadcrumb.h
     shell/include/godxplr/ui/shell/action_registry.h
+    shell/include/godxplr/ui/shell/sidebar_model.h
     shell/src/breadcrumb.cpp
+    shell/src/sidebar_model.cpp
     model/include/godxplr/ui/model/geometry_types.h
     model/include/godxplr/ui/model/directory_entry.h
     model/include/godxplr/ui/model/directory_store.h
     model/include/godxplr/ui/model/selection_model.h
+    model/include/godxplr/ui/model/tree_model.h
     model/src/directory_store.cpp
     model/src/selection_model.cpp
+    model/src/tree_model.cpp
     view/include/godxplr/ui/view/file_layout.h
     view/include/godxplr/ui/view/details_layout.h
+    view/include/godxplr/ui/view/list_layout.h
+    view/include/godxplr/ui/view/grid_layout.h
+    view/include/godxplr/ui/view/gallery_layout.h
+    view/include/godxplr/ui/view/accessibility_semantics.h
+    view/include/godxplr/ui/view/interaction_controller.h
     view/src/details_layout.cpp
+    view/src/list_layout.cpp
+    view/src/grid_layout.cpp
+    view/src/gallery_layout.cpp
+    view/src/interaction_controller.cpp
     async/include/godxplr/ui/async/ui_mailbox.h
     async/include/godxplr/ui/async/directory_sorter.h
     async/include/godxplr/ui/async/directory_pipeline_coordinator.h
