@@ -82,6 +82,12 @@ if(WIN32)
     )
     target_link_libraries(test-navigation-interactions PRIVATE godxplr-ui-state godxplr-platform-win32 godxplr-core)
     add_test(NAME UI.NavigationInteractions COMMAND test-navigation-interactions)
+
+    add_executable(test-icon-thumbnail
+        unit/ui/icon_thumbnail_tests.cpp
+    )
+    target_link_libraries(test-icon-thumbnail PRIVATE godxplr-ui-state godxplr-platform-win32 godxplr-core)
+    add_test(NAME UI.IconThumbnail COMMAND test-icon-thumbnail)
 endif()
 
 # Benchmark executable

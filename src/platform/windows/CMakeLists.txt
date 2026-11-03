@@ -4,11 +4,15 @@ add_library(godxplr-platform-win32 STATIC
     include/godxplr/platform/usn_tail.h
     include/godxplr/platform/shm_channel.h
     include/godxplr/platform/win32_directory_provider.h
+    include/godxplr/platform/com_apartment.h
+    include/godxplr/platform/shell_thumbnail_provider.h
     src/win32_common.cpp
     src/usn_enumerator.cpp
     src/usn_tail.cpp
     src/shm_channel.cpp
     src/win32_directory_provider.cpp
+    src/com_apartment.cpp
+    src/shell_thumbnail_provider.cpp
 )
 
 target_include_directories(godxplr-platform-win32
@@ -22,6 +26,7 @@ target_link_libraries(godxplr-platform-win32
         godxplr-core
         kernel32
         user32
+        gdi32
         advapi32
         shell32
         ole32

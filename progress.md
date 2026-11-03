@@ -1,9 +1,9 @@
 # GodXplr — Project Progress Ledger
 
 **Last updated:** 2026-11-04  
-**Overall status:** SIDEBAR, LAZY TREE & VIEW INTERACTIONS VERIFIED — P00 THROUGH P07 PASSED — READY FOR P08  
-**Current phase:** P08 — Icons, thumbnails, gallery and previews (Spec 03 U6–U7)  
-**Next action:** Execute `prompts/phases/P08-icons-thumbnails-previews.md`.
+**Overall status:** ICONS, THUMBNAIL CACHE & PREVIEW PIPELINE VERIFIED — P00 THROUGH P08 PASSED — READY FOR P09  
+**Current phase:** P09 — Filename index and search engine integration (Spec 01 S0–S12)  
+**Next action:** Execute `prompts/phases/P09-search-engine-integration.md`.
 
 ## 1. Truthful project status
 
@@ -23,8 +23,8 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | Virtualized file surface | PASS | P05 / Spec 03 U2 (158.5 B/row, 100 ns visible range math). |
 | Directory pipeline and sorting | PASS | P06 / Spec 03 U3–U4 (Win32 provider, bounded mailbox, A->B->C rapid cancellation, natural sort). |
 | Tree and interaction modes | PASS | P07 / Spec 03 U5 (Lazy tree model, sidebar, List/Grid/Gallery layouts, keyboard navigation, drag/drop scaffolding). |
-| Icons/previews/thumbnails | READY | P08 / Spec 03 U6–U7. |
-| Search integration | S1–S8 COMPLETE | Verified with 1M benchmark (8.5 µs - 1.06 ms) & Shm IPC. |
+| Icons/previews/thumbnails | PASS | P08 / Spec 03 U6–U7 (`docs/reports/P08-completion.md`). |
+| Search integration | S1–S8 COMPLETE | Verified with 1M benchmark (8.5 µs - 1.06 ms) & Shm IPC; P09 integration ready. |
 | Content indexing | NOT STARTED | P10 / Spec 02 C0–C12; each substep is gated. |
 | File operation engine | SPEC REQUIRED | Produce Spec 04 before implementation. |
 | Shell integration | SPEC REQUIRED | Produce subsystem spec before broad integration. |
@@ -51,8 +51,8 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | P05 | Directory store, model and virtualized details view (U2) | PASS | `docs/reports/P05-completion.md` (12/12 CTests pass) |
 | P06 | Async enumeration, mailbox, generations and sort (U3–U4) | PASS | `docs/reports/P06-completion.md` (13/13 CTests pass) |
 | P07 | Sidebar/tree, view modes and input interactions (U5) | PASS | `docs/reports/P07-completion.md` (14/14 CTests pass) |
-| P08 | Icons, thumbnails, gallery and previews (U6–U7) | READY | — |
-| P09 | Filename index + search engine (Spec 01 S0–S12) | NOT STARTED | — |
+| P08 | Icons, thumbnails, gallery and previews (U6–U7) | PASS | `docs/reports/P08-completion.md` (15/15 CTests pass) |
+| P09 | Filename index + search engine (Spec 01 S0–S12) | READY | — |
 | P10 | Content index + extractors (Spec 02 C0–C12) | NOT STARTED | — |
 | P11 | File operations engine (Spec 04 required first) | BLOCKED BY SPEC | — |
 | P12 | Native Windows Shell integration | BLOCKED BY SPEC | — |

@@ -8,8 +8,16 @@ add_library(godxplr-ui-state STATIC
     shell/include/godxplr/ui/shell/breadcrumb.h
     shell/include/godxplr/ui/shell/action_registry.h
     shell/include/godxplr/ui/shell/sidebar_model.h
+    shell/include/godxplr/ui/shell/preview_model.h
     shell/src/breadcrumb.cpp
     shell/src/sidebar_model.cpp
+    shell/src/preview_model.cpp
+    cache/include/godxplr/ui/cache/cache_keys.h
+    cache/include/godxplr/ui/cache/pixel_buffer.h
+    cache/include/godxplr/ui/cache/icon_cache.h
+    cache/include/godxplr/ui/cache/thumbnail_cache.h
+    cache/src/icon_cache.cpp
+    cache/src/thumbnail_cache.cpp
     model/include/godxplr/ui/model/geometry_types.h
     model/include/godxplr/ui/model/directory_entry.h
     model/include/godxplr/ui/model/directory_store.h
@@ -33,9 +41,11 @@ add_library(godxplr-ui-state STATIC
     async/include/godxplr/ui/async/ui_mailbox.h
     async/include/godxplr/ui/async/directory_sorter.h
     async/include/godxplr/ui/async/directory_pipeline_coordinator.h
+    async/include/godxplr/ui/async/decoration_scheduler.h
     async/src/ui_mailbox.cpp
     async/src/directory_sorter.cpp
     async/src/directory_pipeline_coordinator.cpp
+    async/src/decoration_scheduler.cpp
 )
 
 target_include_directories(godxplr-ui-state
@@ -46,6 +56,7 @@ target_include_directories(godxplr-ui-state
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/model/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/view/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/async/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/cache/include>
         $<INSTALL_INTERFACE:include>
 )
 
