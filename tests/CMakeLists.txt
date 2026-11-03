@@ -118,6 +118,12 @@ if(WIN32)
     )
     target_link_libraries(test-fileops PRIVATE godxplr-fileops godxplr-platform-win32 godxplr-core)
     add_test(NAME FileOps.Engine COMMAND test-fileops)
+
+    add_executable(test-shell-integration
+        unit/platform/shell_integration_tests.cpp
+    )
+    target_link_libraries(test-shell-integration PRIVATE godxplr-platform-win32 godxplr-core)
+    add_test(NAME Platform.ShellIntegration COMMAND test-shell-integration)
 endif()
 
 # Benchmark executable

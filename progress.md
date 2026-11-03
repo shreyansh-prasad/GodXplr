@@ -1,9 +1,9 @@
 # GodXplr — Project Progress Ledger
 
 **Last updated:** 2026-11-04  
-**Overall status:** SPEC 01, SPEC 02 & SPEC 04 SUBSYSTEMS COMPLETE (P00 THROUGH P11 PASSED) — READY FOR P12  
-**Current phase:** P12 — Native Windows Shell integration (Spec 05 / Architecture)  
-**Next action:** Execute `prompts/phases/P12-windows-shell-integration.md`.
+**Overall status:** SPEC 01, SPEC 02, SPEC 04 & SPEC 05 SUBSYSTEMS COMPLETE (P00 THROUGH P12 PASSED) — READY FOR P13  
+**Current phase:** P13 — Advanced power features (Spec 06)  
+**Next action:** Execute `prompts/phases/P13-advanced-power-features.md`.
 
 ## 1. Truthful project status
 
@@ -27,7 +27,7 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | Search integration | PASS | Spec 01 S0–S12 complete (MFT raw enumerator, fuzzy fzf, multi-tier ranking, usage DB, named pipe IPC, and crawler fallback verified). |
 | Content indexing | PASS | `docs/reports/P10-completion.md` (19/19 CTests pass). |
 | File operation engine | PASS | Spec 04 implemented; WAL journal, atomic rename, preallocated copy, conflict policies, undo/redo verified (20/20 CTests pass). |
-| Shell integration | SPEC REQUIRED | Produce subsystem spec before broad integration. |
+| Shell integration | PASS | Spec 05 implemented; IContextMenu3, CF_HDROP, properties, drag/drop verified (21/21 CTests pass). |
 | Advanced features | SPEC REQUIRED | Define semantics and tests before implementing. |
 | Archives/network/cloud/MTP | SPEC REQUIRED | Provider and security architecture required. |
 | Release/installer | NOT STARTED | Must be late-stage after reliability/security gates. |
@@ -55,8 +55,8 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | P09 | Filename index + search engine (Spec 01 S0–S12) | PASS | `docs/reports/P09-completion.md` (18/18 CTests pass) |
 | P10 | Content index + extractors (Spec 02 C0–C12) | PASS | `docs/reports/P10-completion.md` (19/19 CTests pass) |
 | P11 | File operations engine (Spec 04 required first) | PASS | `docs/reports/P11-completion.md` (20/20 CTests pass) |
-| P12 | Native Windows Shell integration | READY | — |
-| P13 | Advanced power features (feature specs required) | BLOCKED BY SPECS | — |
+| P12 | Native Windows Shell integration | PASS | `docs/reports/P12-completion.md` (21/21 CTests pass) |
+| P13 | Advanced power features (feature specs required) | READY | — |
 | P14 | Archives and virtual filesystem providers | BLOCKED BY SPEC | — |
 | P15 | Network/cloud/MTP providers | BLOCKED BY SPECS | — |
 | P16 | Reliability, performance and security hardening | NOT STARTED | — |
