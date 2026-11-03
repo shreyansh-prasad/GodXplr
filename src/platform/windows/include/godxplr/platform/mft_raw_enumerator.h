@@ -141,3 +141,4 @@ private:
 };
 
 } // namespace gx::platform::win32
+

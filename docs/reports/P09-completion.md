@@ -97,3 +97,4 @@ Complete the entire Spec 01 search subsystem from first principles, integrating 
 ## Required next action
 
 Proceed to **Phase P10** (Spec 02 Content index, text/document extractors, and Roaring Bitmaps candidate indexing) when authorized.
+

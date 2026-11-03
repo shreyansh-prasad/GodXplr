@@ -1,9 +1,9 @@
 # GodXplr — Project Progress Ledger
 
 **Last updated:** 2026-11-04  
-**Overall status:** SPEC 01 SEARCH SUBSYSTEM COMPLETE (S0–S12 VERIFIED) — P00 THROUGH P09 PASSED — READY FOR P10  
-**Current phase:** P10 — Content index and extractors (Spec 02 C0–C12)  
-**Next action:** Execute `prompts/phases/P10-content-index-extractors.md`.
+**Overall status:** SPEC 01 & SPEC 02 SUBSYSTEMS COMPLETE (P00 THROUGH P10 PASSED) — READY FOR P11  
+**Current phase:** P11 — File operations engine (Spec 04 required)  
+**Next action:** Author Spec 04 and execute Phase P11.
 
 ## 1. Truthful project status
 
@@ -13,7 +13,7 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 |---|---|---|
 | Competitor research | SOURCED & STRESS-TESTED | ADR-0019 to ADR-0025 logged; first-principles solutions accepted. |
 | Spec 01 — NTFS index + search | SPEC IMPLEMENTED (S1–S8) | SoA `NameIndex`, AVX2 needle scan, USN enum/tailer, Shm IPC, `.gxi` snapshots. |
-| Spec 02 — Content index + extractors | SPEC EXPANDED | Roaring Bitmaps candidate search adopted (ADR-0024). |
+| Spec 02 — Content index + extractors | PASS | P10 complete; Positionless trigram index (ADR-0024), text/XML extractors, queue reconciliation, sandbox job objects verified. |
 | Spec 03 — UI rendering + performance | U0 BENCHMARK READY | Deterministic synthetic dataset generator + JSON telemetry harness complete. |
 | Repository audit | PASS | `docs/reports/P00-completion.md` (Commit `33d8c40`). |
 | Architecture integration | PASS | `docs/reports/P01-completion.md` (Commit `0d06e67`). |
@@ -25,7 +25,7 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | Tree and interaction modes | PASS | P07 / Spec 03 U5 (Lazy tree model, sidebar, List/Grid/Gallery layouts, keyboard navigation, drag/drop scaffolding). |
 | Icons/previews/thumbnails | PASS | P08 / Spec 03 U6–U7 (`docs/reports/P08-completion.md`). |
 | Search integration | PASS | Spec 01 S0–S12 complete (MFT raw enumerator, fuzzy fzf, multi-tier ranking, usage DB, named pipe IPC, and crawler fallback verified). |
-| Content indexing | NOT STARTED | P10 / Spec 02 C0–C12; each substep is gated. |
+| Content indexing | PASS | `docs/reports/P10-completion.md` (19/19 CTests pass). |
 | File operation engine | SPEC REQUIRED | Produce Spec 04 before implementation. |
 | Shell integration | SPEC REQUIRED | Produce subsystem spec before broad integration. |
 | Advanced features | SPEC REQUIRED | Define semantics and tests before implementing. |
@@ -53,8 +53,8 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | P07 | Sidebar/tree, view modes and input interactions (U5) | PASS | `docs/reports/P07-completion.md` (14/14 CTests pass) |
 | P08 | Icons, thumbnails, gallery and previews (U6–U7) | PASS | `docs/reports/P08-completion.md` (15/15 CTests pass) |
 | P09 | Filename index + search engine (Spec 01 S0–S12) | PASS | `docs/reports/P09-completion.md` (18/18 CTests pass) |
-| P10 | Content index + extractors (Spec 02 C0–C12) | READY | — |
-| P11 | File operations engine (Spec 04 required first) | BLOCKED BY SPEC | — |
+| P10 | Content index + extractors (Spec 02 C0–C12) | PASS | `docs/reports/P10-completion.md` (19/19 CTests pass) |
+| P11 | File operations engine (Spec 04 required first) | BLOCKED BY SPEC | Author Spec 04 |
 | P12 | Native Windows Shell integration | BLOCKED BY SPEC | — |
 | P13 | Advanced power features (feature specs required) | BLOCKED BY SPECS | — |
 | P14 | Archives and virtual filesystem providers | BLOCKED BY SPEC | — |

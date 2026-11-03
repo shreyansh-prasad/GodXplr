@@ -132,3 +132,4 @@ void CrawlerFallback::crawlInternal(
 }
 
 } // namespace gx::platform::win32
+

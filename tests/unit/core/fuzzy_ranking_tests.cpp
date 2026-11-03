@@ -199,3 +199,4 @@ int main() {
     std::cout << "All Fuzzy, Ranking & Usage DB tests PASSED!" << std::endl;
     return 0;
 }
+

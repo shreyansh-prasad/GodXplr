@@ -68,6 +68,7 @@ endif()
 # Subdirectories
 # ------------------------------------------------------------------------------
 add_subdirectory(src/core)
+add_subdirectory(src/content)
 
 if(WIN32)
     add_subdirectory(src/platform/windows)

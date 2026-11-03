@@ -38,3 +38,4 @@ public:
 };
 
 } // namespace gx::search
+

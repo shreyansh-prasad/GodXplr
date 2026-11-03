@@ -89,3 +89,4 @@ size_t UsageTracker::size() const {
 }
 
 } // namespace gx::search
+

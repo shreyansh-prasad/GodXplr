@@ -106,6 +106,12 @@ if(WIN32)
     )
     target_link_libraries(test-search-ipc-crawler PRIVATE godxplr-platform-win32 godxplr-core)
     add_test(NAME Platform.SearchIpcCrawler COMMAND test-search-ipc-crawler)
+
+    add_executable(test-content-index
+        unit/content/content_index_tests.cpp
+    )
+    target_link_libraries(test-content-index PRIVATE godxplr-content godxplr-platform-win32 godxplr-core)
+    add_test(NAME Content.Index COMMAND test-content-index)
 endif()
 
 # Benchmark executable

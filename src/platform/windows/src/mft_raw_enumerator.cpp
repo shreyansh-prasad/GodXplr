@@ -251,3 +251,4 @@ MftStatus MftRawEnumerator::enumerateVolume(
 #endif // _WIN32
 
 } // namespace gx::platform::win32
+

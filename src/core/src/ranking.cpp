@@ -60,3 +60,4 @@ double SearchRanker::computeScore(const EntryRankingFeatures& features, uint64_t
 }
 
 } // namespace gx::search
+
