@@ -252,3 +252,4 @@ void DecorationScheduler::dispatchNextThumbnail() {
 }
 
 } // namespace gx::ui
+

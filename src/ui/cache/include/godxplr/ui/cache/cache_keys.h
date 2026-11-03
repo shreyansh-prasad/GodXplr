@@ -64,3 +64,4 @@ struct std::hash<gx::ui::ThumbnailKey> {
         return seed;
     }
 };
+

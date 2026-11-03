@@ -28,6 +28,12 @@ add_executable(test-search-engine
 target_link_libraries(test-search-engine PRIVATE godxplr-core)
 add_test(NAME Core.SearchEngine COMMAND test-search-engine)
 
+add_executable(test-fuzzy-ranking
+    unit/core/fuzzy_ranking_tests.cpp
+)
+target_link_libraries(test-fuzzy-ranking PRIVATE godxplr-core)
+add_test(NAME Core.FuzzyRanking COMMAND test-fuzzy-ranking)
+
 add_executable(test-index-serializer
     unit/core/index_serializer_tests.cpp
 )
@@ -71,6 +77,12 @@ if(WIN32)
     target_link_libraries(test-usn-enumerator PRIVATE godxplr-platform-win32)
     add_test(NAME Platform.UsnEnumerator COMMAND test-usn-enumerator)
 
+    add_executable(test-mft-raw-enumerator
+        unit/platform/mft_raw_enumerator_tests.cpp
+    )
+    target_link_libraries(test-mft-raw-enumerator PRIVATE godxplr-platform-win32 godxplr-core)
+    add_test(NAME Platform.MftRawEnumerator COMMAND test-mft-raw-enumerator)
+
     add_executable(test-async-pipeline
         unit/ui/async_pipeline_tests.cpp
     )
@@ -88,6 +100,12 @@ if(WIN32)
     )
     target_link_libraries(test-icon-thumbnail PRIVATE godxplr-ui-state godxplr-platform-win32 godxplr-core)
     add_test(NAME UI.IconThumbnail COMMAND test-icon-thumbnail)
+
+    add_executable(test-search-ipc-crawler
+        unit/platform/search_ipc_crawler_tests.cpp
+    )
+    target_link_libraries(test-search-ipc-crawler PRIVATE godxplr-platform-win32 godxplr-core)
+    add_test(NAME Platform.SearchIpcCrawler COMMAND test-search-ipc-crawler)
 endif()
 
 # Benchmark executable

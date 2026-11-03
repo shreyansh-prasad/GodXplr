@@ -124,3 +124,4 @@ void StaWorkerThread::threadMain() {
 } // namespace gx::platform::win32
 
 #endif // _WIN32
+

@@ -65,3 +65,4 @@ CacheMetrics IconCache::metrics() const {
 }
 
 } // namespace gx::ui
+

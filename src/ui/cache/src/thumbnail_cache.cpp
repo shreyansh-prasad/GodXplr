@@ -105,3 +105,4 @@ CacheMetrics ThumbnailCache::metrics() const {
 }
 
 } // namespace gx::ui
+

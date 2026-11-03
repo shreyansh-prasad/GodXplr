@@ -93,3 +93,4 @@ Implement the asynchronous decoration, thumbnail, and preview pipeline adhering 
 ## Required next action
 
 Proceed to **Phase P09** (Spec 01 Filename index + search engine integration: IPC pipe connecting `godxplr-indexd` to UI search adapter, query grammar, and ranking evaluation) when authorized.
+
