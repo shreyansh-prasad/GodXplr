@@ -1,6 +1,8 @@
 add_library(godxplr-core STATIC
     include/godxplr/core/version.h
     include/godxplr/core/entry_key.h
+    include/godxplr/core/directory_entry.h
+    include/godxplr/core/provider_contract.h
     include/godxplr/core/search_types.h
     include/godxplr/core/name_index.h
     include/godxplr/core/simd_search.h

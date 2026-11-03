@@ -3,10 +3,12 @@ add_library(godxplr-platform-win32 STATIC
     include/godxplr/platform/usn_enumerator.h
     include/godxplr/platform/usn_tail.h
     include/godxplr/platform/shm_channel.h
+    include/godxplr/platform/win32_directory_provider.h
     src/win32_common.cpp
     src/usn_enumerator.cpp
     src/usn_tail.cpp
     src/shm_channel.cpp
+    src/win32_directory_provider.cpp
 )
 
 target_include_directories(godxplr-platform-win32

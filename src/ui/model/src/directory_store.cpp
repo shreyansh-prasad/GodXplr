@@ -96,6 +96,36 @@ uint32_t DirectoryStore::addEntry(const EntryKey& key,
     return idx;
 }
 
+void DirectoryStore::appendBatch(const DirectoryBatch& batch) {
+    if (batch.entries.empty()) {
+        return;
+    }
+
+    const uint32_t baseOffset = static_cast<uint32_t>(nameArena_.size());
+    nameArena_.insert(nameArena_.end(), batch.nameArena.begin(), batch.nameArena.end());
+
+    entries_.reserve(entries_.size() + batch.entries.size());
+    permutation_.reserve(permutation_.size() + batch.entries.size());
+    keyToIndex_.reserve(keyToIndex_.size() + batch.entries.size());
+
+    for (const auto& item : batch.entries) {
+        uint32_t idx = static_cast<uint32_t>(entries_.size());
+        DirectoryEntry e = item;
+        e.name.offset += baseOffset;
+        entries_.push_back(e);
+        permutation_.push_back(idx);
+        keyToIndex_[e.key] = idx;
+    }
+}
+
+void DirectoryStore::applyPermutation(std::vector<uint32_t>&& newPermutation, uint64_t sortGeneration) {
+    if (newPermutation.size() != entries_.size()) {
+        return; // Guard against stale or mismatched permutation
+    }
+    permutation_ = std::move(newPermutation);
+    generation_ = sortGeneration;
+}
+
 void DirectoryStore::clear() {
     entries_.clear();
     permutation_.clear();

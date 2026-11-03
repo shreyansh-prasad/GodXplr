@@ -2,6 +2,7 @@
 
 #include "godxplr/ui/model/directory_entry.h"
 #include "godxplr/ui/state/tab_state.h"
+#include "godxplr/core/provider_contract.h"
 #include <vector>
 #include <unordered_map>
 #include <string_view>
@@ -36,6 +37,12 @@ public:
                       MetaState timeState = MetaState::Known,
                       uint32_t iconKey = 0);
 
+    // Appends a DirectoryBatch into the store in bulk
+    void appendBatch(const DirectoryBatch& batch);
+
+    // Applies a precomputed permutation (e.g. from background sorter)
+    void applyPermutation(std::vector<uint32_t>&& newPermutation, uint64_t sortGeneration);
+
     // Clears all entries and resets arenas
     void clear();
 
@@ -59,6 +66,11 @@ public:
 
     // In-place sorting of row order permutation
     void sort(const SortSpec& spec);
+
+    // Direct raw vector access
+    [[nodiscard]] const std::vector<DirectoryEntry>& entries() const noexcept { return entries_; }
+    [[nodiscard]] const std::vector<uint32_t>& permutation() const noexcept { return permutation_; }
+    [[nodiscard]] std::string_view arena() const noexcept { return std::string_view(nameArena_.data(), nameArena_.size()); }
 
     // Memory footprint calculation in bytes
     [[nodiscard]] size_t totalMemoryBytes() const noexcept;

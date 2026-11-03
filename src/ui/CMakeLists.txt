@@ -17,6 +17,12 @@ add_library(godxplr-ui-state STATIC
     view/include/godxplr/ui/view/file_layout.h
     view/include/godxplr/ui/view/details_layout.h
     view/src/details_layout.cpp
+    async/include/godxplr/ui/async/ui_mailbox.h
+    async/include/godxplr/ui/async/directory_sorter.h
+    async/include/godxplr/ui/async/directory_pipeline_coordinator.h
+    async/src/ui_mailbox.cpp
+    async/src/directory_sorter.cpp
+    async/src/directory_pipeline_coordinator.cpp
 )
 
 target_include_directories(godxplr-ui-state
@@ -26,12 +32,14 @@ target_include_directories(godxplr-ui-state
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/shell/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/model/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/view/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/async/include>
         $<INSTALL_INTERFACE:include>
 )
 
 target_link_libraries(godxplr-ui-state
     PUBLIC
         godxplr-core
+        godxplr-platform-win32
 )
 
 if(WIN32)
