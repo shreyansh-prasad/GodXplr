@@ -171,6 +171,22 @@ if(WIN32)
         godxplr-core
     )
     add_test(NAME Distribution.Lifecycle COMMAND test-distribution)
+
+    add_executable(test-e2e-full
+        unit/e2e/e2e_full_verification.cpp
+    )
+    target_link_libraries(test-e2e-full PRIVATE
+        godxplr-distribution
+        godxplr-power
+        godxplr-providers
+        godxplr-fileops
+        godxplr-content
+        godxplr-ui-state
+        godxplr-platform-win32
+        godxplr-core
+        shell32
+    )
+    add_test(NAME E2E.FullSystem COMMAND test-e2e-full)
 endif()
 
 # Benchmark executable
