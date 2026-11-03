@@ -38,3 +38,4 @@ add_executable(bench-runner
     src/main_bench_runner.cpp
 )
 target_link_libraries(bench-runner PRIVATE godxplr-bench)
+

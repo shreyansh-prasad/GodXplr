@@ -108,3 +108,4 @@ private:
 } // namespace gx::platform::win32
 
 #endif // _WIN32
+

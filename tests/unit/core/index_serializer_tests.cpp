@@ -126,3 +126,4 @@ int main() {
     std::cout << "All IndexSerializer tests passed successfully!\n";
     return 0;
 }
+

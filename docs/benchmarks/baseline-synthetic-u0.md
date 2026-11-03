@@ -36,3 +36,4 @@
 
 > [!NOTE]
 > This benchmark establishes the U0 baseline on synthetic data. These figures are not competitor comparisons; they define the reproducible baseline for subsequent UI virtualized model and view performance validations.
+

@@ -111,3 +111,4 @@ Summary: [`docs/benchmarks/baseline-synthetic-u0.md`](file:///c:/os%20fileX/docs
 ## Next action (do not execute automatically)
 
 Phase P04 — Main window shell and state skeleton (Spec 03 U1).
+

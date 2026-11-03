@@ -1,9 +1,9 @@
 # GodXplr — Project Progress Ledger
 
 **Last updated:** 2026-11-03  
-**Overall status:** BUILD SYSTEM & BENCHMARK FOUNDATION VERIFIED — P00, P01, P02 & P03 PASSED — READY FOR P04  
-**Current phase:** P04 — Main window shell and state skeleton (Spec 03 U1)  
-**Next action:** Execute `prompts/phases/P04-main-window-shell.md`.
+**Overall status:** BUILD SYSTEM, BENCHMARK & SHELL FOUNDATION VERIFIED — P00, P01, P02, P03 & P04 PASSED — READY FOR P05  
+**Current phase:** P05 — Directory store, model and virtualized details view (Spec 03 U2)  
+**Next action:** Execute `prompts/phases/P05-virtualized-file-view.md`.
 
 ## 1. Truthful project status
 
@@ -18,9 +18,9 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | Repository audit | PASS | `docs/reports/P00-completion.md` (Commit `33d8c40`). |
 | Architecture integration | PASS | `docs/reports/P01-completion.md` (Commit `0d06e67`). |
 | CMake/toolchain/CI | PASS | `docs/reports/P02-completion.md` (MSVC /W4 /WX /arch:AVX2 clean). |
-| UI benchmark harness | PASS | `docs/reports/P03-completion.md` (100k items, 10/10 CTests pass). |
-| Main UI shell | READY | P04 / Spec 03 U1. |
-| Virtualized file surface | NOT STARTED | P05 / Spec 03 U2. |
+| UI benchmark harness | PASS | `docs/reports/P03-completion.md` (Commit `e7a9286`). |
+| Main UI shell | PASS | `docs/reports/P04-completion.md` (11/11 CTests pass). |
+| Virtualized file surface | READY | P05 / Spec 03 U2. |
 | Directory pipeline and sorting | NOT STARTED | P06 / Spec 03 U3–U4. |
 | Tree and interaction modes | NOT STARTED | P07 / Spec 03 U5. |
 | Icons/previews/thumbnails | NOT STARTED | P08 / Spec 03 U6–U7. |
@@ -46,9 +46,9 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | P00 | Repository audit and source alignment | PASS | `docs/reports/P00-completion.md` (Commit `33d8c40`) |
 | P01 | Integrated architecture and requirements baseline | PASS | `docs/reports/P01-completion.md` (Commit `0d06e67`) |
 | P02 | Build system, toolchain and CI foundation | PASS | `docs/reports/P02-completion.md` (MSVC /W4 /WX clean) |
-| P03 | UI benchmark harness and telemetry (Spec 03 U0) | PASS | `docs/reports/P03-completion.md` (10/10 CTests pass) |
-| P04 | Main window shell and state skeleton (U1) | READY | — |
-| P05 | Directory store, model and virtualized details view (U2) | NOT STARTED | — |
+| P03 | UI benchmark harness and telemetry (Spec 03 U0) | PASS | `docs/reports/P03-completion.md` (Commit `e7a9286`) |
+| P04 | Main window shell and state skeleton (U1) | PASS | `docs/reports/P04-completion.md` (11/11 CTests pass) |
+| P05 | Directory store, model and virtualized details view (U2) | READY | — |
 | P06 | Async enumeration, mailbox, generations and sort (U3–U4) | NOT STARTED | — |
 | P07 | Sidebar/tree, view modes and input interactions (U5) | NOT STARTED | — |
 | P08 | Icons, thumbnails, gallery and previews (U6–U7) | NOT STARTED | — |

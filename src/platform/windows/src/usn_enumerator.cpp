@@ -242,3 +242,4 @@ UsnStatus UsnEnumerator::enumerateVolume(NameIndex& outIndex,
 } // namespace gx::platform::win32
 
 #endif // _WIN32
+

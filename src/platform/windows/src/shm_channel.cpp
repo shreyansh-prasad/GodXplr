@@ -265,3 +265,4 @@ bool ShmClient::waitForResults(uint64_t expectedGen, uint32_t timeoutMs) {
 } // namespace gx::platform::win32
 
 #endif // _WIN32
+

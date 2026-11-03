@@ -74,8 +74,9 @@ if(WIN32)
     add_subdirectory(src/index)
 endif()
 
+add_subdirectory(src/ui)
+
 if(GODXPLR_HAVE_QT)
-    add_subdirectory(src/ui)
     add_subdirectory(src/app)
 endif()
 

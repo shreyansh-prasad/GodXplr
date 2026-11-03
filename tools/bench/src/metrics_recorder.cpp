@@ -212,3 +212,4 @@ std::string MetricsRecorder::toMarkdown(std::string_view scenario,
 }
 
 } // namespace gx::bench
+

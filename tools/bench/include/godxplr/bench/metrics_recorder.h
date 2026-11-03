@@ -73,3 +73,4 @@ private:
 };
 
 } // namespace gx::bench
+

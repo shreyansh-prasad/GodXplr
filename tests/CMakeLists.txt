@@ -40,6 +40,12 @@ add_executable(test-dataset-generator
 target_link_libraries(test-dataset-generator PRIVATE godxplr-bench godxplr-core)
 add_test(NAME Bench.DatasetGenerator COMMAND test-dataset-generator)
 
+add_executable(test-navigation-state
+    unit/ui/navigation_state_tests.cpp
+)
+target_link_libraries(test-navigation-state PRIVATE godxplr-ui-state godxplr-core)
+add_test(NAME UI.NavigationState COMMAND test-navigation-state)
+
 if(WIN32)
     add_executable(test-win32-common
         unit/platform/win32_common_tests.cpp
