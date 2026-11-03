@@ -9,3 +9,4 @@ target_link_libraries(godxplr-indexd
 )
 
 target_compile_features(godxplr-indexd PRIVATE cxx_std_20)
+

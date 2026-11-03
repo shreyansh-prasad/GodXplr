@@ -20,3 +20,4 @@ target_link_libraries(godxplr-platform-win32
 )
 
 target_compile_features(godxplr-platform-win32 PUBLIC cxx_std_20)
+

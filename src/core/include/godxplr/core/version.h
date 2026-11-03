@@ -11,3 +11,4 @@ inline constexpr std::string_view kVersionString = "0.1.0";
 inline constexpr std::string_view kApplicationName = "GodXplr";
 
 } // namespace gx::core
+

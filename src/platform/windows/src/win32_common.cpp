@@ -65,3 +65,4 @@ std::string utf16_to_utf8(std::wstring_view utf16) {
 } // namespace gx::platform::win32
 
 #endif // _WIN32
+
