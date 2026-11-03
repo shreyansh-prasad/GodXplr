@@ -1,9 +1,9 @@
 # GodXplr — Project Progress Ledger
 
 **Last updated:** 2026-11-04  
-**Overall status:** SPEC 01, SPEC 02, SPEC 04, SPEC 05 & SPEC 06 COMPLETE (P00 THROUGH P13 PASSED) — READY FOR P14  
-**Current phase:** P14 — Archives and virtual filesystem providers (Spec 07)  
-**Next action:** Execute `prompts/phases/P14-archives-virtual-filesystems.md`.
+**Overall status:** SPEC 01, SPEC 02, SPEC 04, SPEC 05, SPEC 06 & SPEC 07 COMPLETE (P00 THROUGH P14 PASSED) — READY FOR P15  
+**Current phase:** P15 — Network/cloud/MTP providers (Spec 08)  
+**Next action:** Execute `prompts/phases/P15-network-cloud-mtp-providers.md`.
 
 ## 1. Truthful project status
 
@@ -29,6 +29,7 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | File operation engine | PASS | Spec 04 implemented; WAL journal, atomic rename, preallocated copy, conflict policies, undo/redo verified (20/20 CTests pass). |
 | Shell integration | PASS | Spec 05 implemented; IContextMenu3, CF_HDROP, properties, drag/drop verified (21/21 CTests pass). |
 | Advanced power features | PASS | Spec 06 implemented; Batch renamer, 3-tier duplicate finder, folder sync verified (22/22 CTests pass). |
+| Archives and virtual filesystems | PASS | Spec 07 implemented; IVirtualProvider SPI, ZIP parser, path traversal defense verified (23/23 CTests pass). |
 | Advanced features | SPEC REQUIRED | Define semantics and tests before implementing. |
 | Archives/network/cloud/MTP | SPEC REQUIRED | Provider and security architecture required. |
 | Release/installer | NOT STARTED | Must be late-stage after reliability/security gates. |
@@ -58,8 +59,8 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | P11 | File operations engine (Spec 04 required first) | PASS | `docs/reports/P11-completion.md` (20/20 CTests pass) |
 | P12 | Native Windows Shell integration | PASS | `docs/reports/P12-completion.md` (21/21 CTests pass) |
 | P13 | Advanced power features (feature specs required) | PASS | `docs/reports/P13-completion.md` (22/22 CTests pass) |
-| P14 | Archives and virtual filesystem providers | READY | — |
-| P15 | Network/cloud/MTP providers | BLOCKED BY SPECS | — |
+| P14 | Archives and virtual filesystem providers | PASS | `docs/reports/P14-completion.md` (23/23 CTests pass) |
+| P15 | Network/cloud/MTP providers | READY | — |
 | P16 | Reliability, performance and security hardening | NOT STARTED | — |
 | P17 | Installer, update/rollback and default opener | NOT STARTED | — |
 | P18 | Cross-platform CI/portability validation | NOT STARTED | — |

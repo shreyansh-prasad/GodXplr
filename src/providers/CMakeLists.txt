@@ -1,0 +1,18 @@
+add_library(godxplr-providers STATIC
+    src/virtual_provider.cpp
+    src/zip_archive_provider.cpp
+)
+
+target_include_directories(godxplr-providers
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+)
+
+target_link_libraries(godxplr-providers
+    PUBLIC
+        godxplr-core
+        godxplr-platform-win32
+)
+
+target_compile_features(godxplr-providers PUBLIC cxx_std_20)

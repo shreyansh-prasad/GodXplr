@@ -130,6 +130,12 @@ if(WIN32)
     )
     target_link_libraries(test-power-features PRIVATE godxplr-power godxplr-fileops godxplr-platform-win32 godxplr-core)
     add_test(NAME Power.Features COMMAND test-power-features)
+
+    add_executable(test-archive-provider
+        unit/providers/archive_provider_tests.cpp
+    )
+    target_link_libraries(test-archive-provider PRIVATE godxplr-providers godxplr-fileops godxplr-platform-win32 godxplr-core)
+    add_test(NAME Providers.Archive COMMAND test-archive-provider)
 endif()
 
 # Benchmark executable
