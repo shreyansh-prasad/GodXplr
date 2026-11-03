@@ -21,3 +21,4 @@ Makefile
 # Crash dumps and logs
 *.log
 *.dmp
+

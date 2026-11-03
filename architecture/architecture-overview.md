@@ -157,3 +157,4 @@ User Copies Directory Tree (e.g. 50,000 files in a repo)
    * Single-writer, multi-reader architecture.
    * Writer thread continuously drains USN journal deltas every 50 ms and updates the SoA in-memory table under a lightweight read-write spinlock.
    * Reader threads service shared-memory query requests using shared reader locks.
+

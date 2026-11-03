@@ -65,3 +65,4 @@ Not applicable for Phase P01 (Architecture definition phase).
 
 ## Next action (do not execute automatically)
 Proceed to **Phase P02 — Build system, toolchain, dependency and CI foundation**.
+

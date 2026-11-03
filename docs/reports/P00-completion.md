@@ -70,3 +70,4 @@ Host machine baseline recorded in `docs/reports/P00-toolchain-and-dependency-inv
 
 ## Next action (do not execute automatically)
 Proceed to **Phase P01 — Integrated architecture and requirements baseline**.
+

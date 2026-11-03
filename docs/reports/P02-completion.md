@@ -75,3 +75,4 @@ CTest execution time: 0.22s real. Build duration: < 5s incremental.
 
 ## Next action (do not execute automatically)
 Proceed to **Phase P03 — UI benchmark harness and telemetry (Spec 03 U0)** or **Phase P09 Substep S0/S1 — NTFS Name Index Columns & Arenas**.
+

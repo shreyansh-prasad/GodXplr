@@ -63,3 +63,4 @@ Since Qt 6 is not yet present on the system, we have two clean paths:
 2. **Option 2 (Headless / Self-Contained):** Use `vcpkg` manifest mode (`vcpkg.json`) to acquire `qtbase[core,gui,widgets]` and build targets automatically via CMake.
 
 *Note for P01/P02:* Headless C++20 core modules (`godxplr-core`, `godxplr-indexd`) and their unit tests do not require Qt and can be compiled and verified using the existing MSVC/CMake toolchain immediately.
+

@@ -60,3 +60,4 @@ Any phase dealing with destructive operations, IPC boundaries, or third-party pl
   * Portable mode configuration and fallback crawler behavior.
   * Registry verb registration for optional Explorer replacement (`HKCR\Directory\shell`).
   * Clean uninstaller leaving zero orphan services or registry keys.
+

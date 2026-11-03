@@ -63,3 +63,4 @@ Every feature in GodXplr belongs to an explicit implementation tier, has an auth
 ## 3. Strict Scope Rule for Agents
 
 An Antigravity agent working on Tier 1 (e.g. Virtualized Viewport in P05) **must not implement speculative hooks for Tier 4 (e.g. Duplicate Finder) or Tier 5 (Cloud Providers)**. Each subsystem must be implemented within its assigned phase according to its approved specification.
+

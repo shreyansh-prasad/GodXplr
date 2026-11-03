@@ -131,3 +131,4 @@ Message Types:
 ```
 
 If `godxplr-shellhost.exe` fails to respond to `PingReq` within 1,000 ms, `godxplr.exe` forcibly terminates the process via `TerminateProcess` on the child job, closes the pipe, and falls back to a clean internal context menu. The main UI thread never blocks.
+
