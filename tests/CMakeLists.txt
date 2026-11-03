@@ -136,6 +136,12 @@ if(WIN32)
     )
     target_link_libraries(test-archive-provider PRIVATE godxplr-providers godxplr-fileops godxplr-platform-win32 godxplr-core)
     add_test(NAME Providers.Archive COMMAND test-archive-provider)
+
+    add_executable(test-network-cloud
+        unit/providers/network_cloud_tests.cpp
+    )
+    target_link_libraries(test-network-cloud PRIVATE godxplr-providers godxplr-platform-win32 godxplr-core)
+    add_test(NAME Providers.NetworkCloud COMMAND test-network-cloud)
 endif()
 
 # Benchmark executable

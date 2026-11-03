@@ -1,9 +1,9 @@
 # GodXplr — Project Progress Ledger
 
 **Last updated:** 2026-11-04  
-**Overall status:** SPEC 01, SPEC 02, SPEC 04, SPEC 05, SPEC 06 & SPEC 07 COMPLETE (P00 THROUGH P14 PASSED) — READY FOR P15  
-**Current phase:** P15 — Network/cloud/MTP providers (Spec 08)  
-**Next action:** Execute `prompts/phases/P15-network-cloud-mtp-providers.md`.
+**Overall status:** SPEC 01, SPEC 02, SPEC 04, SPEC 05, SPEC 06, SPEC 07 & SPEC 08 COMPLETE (P00 THROUGH P15 PASSED) — READY FOR P16  
+**Current phase:** P16 — Hardening, performance and security  
+**Next action:** Execute `prompts/phases/P16-hardening-performance-security.md`.
 
 ## 1. Truthful project status
 
@@ -30,6 +30,7 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | Shell integration | PASS | Spec 05 implemented; IContextMenu3, CF_HDROP, properties, drag/drop verified (21/21 CTests pass). |
 | Advanced power features | PASS | Spec 06 implemented; Batch renamer, 3-tier duplicate finder, folder sync verified (22/22 CTests pass). |
 | Archives and virtual filesystems | PASS | Spec 07 implemented; IVirtualProvider SPI, ZIP parser, path traversal defense verified (23/23 CTests pass). |
+| Network/cloud/MTP providers | PASS | Spec 08 implemented; Anti-hydration cloud detection, UNC timeout handling verified (24/24 CTests pass). |
 | Advanced features | SPEC REQUIRED | Define semantics and tests before implementing. |
 | Archives/network/cloud/MTP | SPEC REQUIRED | Provider and security architecture required. |
 | Release/installer | NOT STARTED | Must be late-stage after reliability/security gates. |
