@@ -1,9 +1,9 @@
 # GodXplr — Project Progress Ledger
 
 **Last updated:** 2026-11-03  
-**Overall status:** REPOSITORY AUDIT COMPLETE — P00 PASSED — READY FOR P01  
-**Current phase:** P01 — Integrated architecture and requirements baseline  
-**Next action:** Execute `prompts/phases/P01-architecture-baseline.md`.
+**Overall status:** ARCHITECTURE BASELINE FROZEN — P00 & P01 PASSED — READY FOR P02  
+**Current phase:** P02 — Build system, toolchain, dependency and CI foundation  
+**Next action:** Execute `prompts/phases/P02-build-foundation.md`.
 
 ## 1. Truthful project status
 
@@ -15,9 +15,9 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | Spec 01 — NTFS index + search | SPEC EXPANDED | In-memory AccessCheck (ADR-0019) + Shared Memory ring buffer (ADR-0022). |
 | Spec 02 — Content index + extractors | SPEC EXPANDED | Roaring Bitmaps candidate search adopted (ADR-0024). |
 | Spec 03 — UI rendering + performance | SPEC EXPANDED | Shell Host isolation (ADR-0020) + MFT real-time folder sizes (ADR-0025). |
-| Repository audit | PASS | `docs/reports/P00-completion.md` (Commit `7714798`). |
-| Architecture integration | IN PROGRESS | P01 currently active. |
-| CMake/toolchain/CI | NOT STARTED | P02 pending. |
+| Repository audit | PASS | `docs/reports/P00-completion.md` (Commit `33d8c40`). |
+| Architecture integration | PASS | `docs/reports/P01-completion.md`. |
+| CMake/toolchain/CI | IN PROGRESS | P02 active. |
 | UI benchmark harness | NOT STARTED | P03 / Spec 03 U0. |
 | Main UI shell | NOT STARTED | P04 / Spec 03 U1. |
 | Virtualized file surface | NOT STARTED | P05 / Spec 03 U2. |
@@ -45,9 +45,9 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 
 | Phase | Name | Status | Gate evidence |
 |---|---|---|---|
-| P00 | Repository audit and source alignment | PASS | `docs/reports/P00-completion.md` (Commit `7714798`) |
-| P01 | Integrated architecture and requirements baseline | IN PROGRESS | Active |
-| P02 | Build system, toolchain and CI foundation | NOT STARTED | — |
+| P00 | Repository audit and source alignment | PASS | `docs/reports/P00-completion.md` (Commit `33d8c40`) |
+| P01 | Integrated architecture and requirements baseline | PASS | `docs/reports/P01-completion.md` |
+| P02 | Build system, toolchain and CI foundation | IN PROGRESS | Active |
 | P03 | UI benchmark harness and telemetry (Spec 03 U0) | NOT STARTED | — |
 | P04 | Main window shell and state skeleton (U1) | NOT STARTED | — |
 | P05 | Directory store, model and virtualized details view (U2) | NOT STARTED | — |
