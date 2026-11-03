@@ -246,3 +246,4 @@ On application startup:
 - **Step 3 (Streaming Engine):** Implement `StreamingFileExecutor`, Overlapped I/O, and space preallocation.
 - **Step 4 (Coordinator & Conflicts):** Implement `FileOpsCoordinator`, conflict policies, and undo/redo stack.
 - **Step 5 (Integration & VHDX Tests):** Verify full test suite on Windows temporary fixtures and VHDX volume boundaries.
+

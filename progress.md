@@ -1,9 +1,9 @@
 # GodXplr — Project Progress Ledger
 
 **Last updated:** 2026-11-04  
-**Overall status:** SPEC 01 & SPEC 02 SUBSYSTEMS COMPLETE (P00 THROUGH P10 PASSED) — READY FOR P11  
-**Current phase:** P11 — File operations engine (Spec 04 required)  
-**Next action:** Author Spec 04 and execute Phase P11.
+**Overall status:** SPEC 01, SPEC 02 & SPEC 04 SUBSYSTEMS COMPLETE (P00 THROUGH P11 PASSED) — READY FOR P12  
+**Current phase:** P12 — Native Windows Shell integration (Spec 05 / Architecture)  
+**Next action:** Execute `prompts/phases/P12-windows-shell-integration.md`.
 
 ## 1. Truthful project status
 
@@ -26,7 +26,7 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | Icons/previews/thumbnails | PASS | P08 / Spec 03 U6–U7 (`docs/reports/P08-completion.md`). |
 | Search integration | PASS | Spec 01 S0–S12 complete (MFT raw enumerator, fuzzy fzf, multi-tier ranking, usage DB, named pipe IPC, and crawler fallback verified). |
 | Content indexing | PASS | `docs/reports/P10-completion.md` (19/19 CTests pass). |
-| File operation engine | SPEC REQUIRED | Produce Spec 04 before implementation. |
+| File operation engine | PASS | Spec 04 implemented; WAL journal, atomic rename, preallocated copy, conflict policies, undo/redo verified (20/20 CTests pass). |
 | Shell integration | SPEC REQUIRED | Produce subsystem spec before broad integration. |
 | Advanced features | SPEC REQUIRED | Define semantics and tests before implementing. |
 | Archives/network/cloud/MTP | SPEC REQUIRED | Provider and security architecture required. |
@@ -54,8 +54,8 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | P08 | Icons, thumbnails, gallery and previews (U6–U7) | PASS | `docs/reports/P08-completion.md` (15/15 CTests pass) |
 | P09 | Filename index + search engine (Spec 01 S0–S12) | PASS | `docs/reports/P09-completion.md` (18/18 CTests pass) |
 | P10 | Content index + extractors (Spec 02 C0–C12) | PASS | `docs/reports/P10-completion.md` (19/19 CTests pass) |
-| P11 | File operations engine (Spec 04 required first) | BLOCKED BY SPEC | Author Spec 04 |
-| P12 | Native Windows Shell integration | BLOCKED BY SPEC | — |
+| P11 | File operations engine (Spec 04 required first) | PASS | `docs/reports/P11-completion.md` (20/20 CTests pass) |
+| P12 | Native Windows Shell integration | READY | — |
 | P13 | Advanced power features (feature specs required) | BLOCKED BY SPECS | — |
 | P14 | Archives and virtual filesystem providers | BLOCKED BY SPEC | — |
 | P15 | Network/cloud/MTP providers | BLOCKED BY SPECS | — |

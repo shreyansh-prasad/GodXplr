@@ -112,6 +112,12 @@ if(WIN32)
     )
     target_link_libraries(test-content-index PRIVATE godxplr-content godxplr-platform-win32 godxplr-core)
     add_test(NAME Content.Index COMMAND test-content-index)
+
+    add_executable(test-fileops
+        unit/fileops/fileops_tests.cpp
+    )
+    target_link_libraries(test-fileops PRIVATE godxplr-fileops godxplr-platform-win32 godxplr-core)
+    add_test(NAME FileOps.Engine COMMAND test-fileops)
 endif()
 
 # Benchmark executable
