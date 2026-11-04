@@ -3,6 +3,8 @@
 #include <commctrl.h>
 #include <shellapi.h>
 #include <shlwapi.h>
+#include <shobjidl.h>
+#include <thumbcache.h>
 #include <dwmapi.h>
 #include <algorithm>
 #include <iomanip>
@@ -37,7 +39,8 @@ constexpr UINT_PTR kCmdSortDesc = 3015;
 constexpr UINT_PTR kCmdViewDetails = 3020;
 constexpr UINT_PTR kCmdViewTiles = 3021;
 constexpr UINT_PTR kCmdViewList = 3022;
-constexpr UINT_PTR kCmdViewGrid = 3023;
+constexpr UINT_PTR kCmdViewLargeIcons = 3023; // Large Icons (Photos/Grid)
+constexpr UINT_PTR kCmdViewGrid = 3023;       // Alias
 constexpr UINT_PTR kCmdToggleCompact = 3024;
 constexpr UINT_PTR kCmdToggleNavPane = 3025;
 constexpr UINT_PTR kCmdToggleDetailsPane = 3026;
@@ -45,6 +48,7 @@ constexpr UINT_PTR kCmdTogglePreviewPane = 3027;
 constexpr UINT_PTR kCmdToggleCheckBoxes = 3028;
 constexpr UINT_PTR kCmdToggleExtensions = 3029;
 constexpr UINT_PTR kCmdToggleHidden = 3030;
+constexpr UINT_PTR kCmdViewMediumIcons = 3038;
 
 // Filter Category IDs
 constexpr UINT_PTR kCmdFilterAll = 3040;
@@ -141,6 +145,12 @@ std::wstring toLower(std::wstring_view s) {
     return out;
 }
 
+std::wstring toUpper(std::wstring_view s) {
+    std::wstring out(s);
+    std::transform(out.begin(), out.end(), out.begin(), ::towupper);
+    return out;
+}
+
 void drawRoundedRect(HDC hdc, const RECT& rc, int radius, COLORREF fillColor, COLORREF borderColor) {
     HBRUSH brush = CreateSolidBrush(fillColor);
     HPEN pen = CreatePen(PS_SOLID, 1, borderColor);
@@ -153,6 +163,49 @@ void drawRoundedRect(HDC hdc, const RECT& rc, int radius, COLORREF fillColor, CO
     SelectObject(hdc, oldPen);
     DeleteObject(brush);
     DeleteObject(pen);
+}
+
+bool getImageDimensions(const std::wstring& path, uint32_t& outW, uint32_t& outH) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f.is_open()) return false;
+    unsigned char buf[32];
+    f.read(reinterpret_cast<char*>(buf), sizeof(buf));
+    if (f.gcount() < 24) return false;
+
+    // PNG: signature 89 50 4E 47
+    if (buf[0] == 0x89 && buf[1] == 'P' && buf[2] == 'N' && buf[3] == 'G') {
+        outW = (static_cast<uint32_t>(buf[16]) << 24) | (static_cast<uint32_t>(buf[17]) << 16) | (static_cast<uint32_t>(buf[18]) << 8) | buf[19];
+        outH = (static_cast<uint32_t>(buf[20]) << 24) | (static_cast<uint32_t>(buf[21]) << 16) | (static_cast<uint32_t>(buf[22]) << 8) | buf[23];
+        return (outW > 0 && outH > 0);
+    }
+    // BMP: signature 'BM'
+    if (buf[0] == 'B' && buf[1] == 'M' && f.gcount() >= 26) {
+        outW = static_cast<uint32_t>(buf[18]) | (static_cast<uint32_t>(buf[19]) << 8) | (static_cast<uint32_t>(buf[20]) << 16) | (static_cast<uint32_t>(buf[21]) << 24);
+        outH = static_cast<uint32_t>(buf[22]) | (static_cast<uint32_t>(buf[23]) << 8) | (static_cast<uint32_t>(buf[24]) << 16) | (static_cast<uint32_t>(buf[25]) << 24);
+        return (outW > 0 && outH > 0);
+    }
+    // JPEG: signature FF D8
+    if (buf[0] == 0xFF && buf[1] == 0xD8) {
+        f.seekg(2, std::ios::beg);
+        unsigned char marker[4];
+        while (f.read(reinterpret_cast<char*>(marker), 4)) {
+            if (marker[0] != 0xFF) break;
+            if (marker[1] == 0xC0 || marker[1] == 0xC1 || marker[1] == 0xC2) {
+                unsigned char sizeBuf[5];
+                if (f.read(reinterpret_cast<char*>(sizeBuf), 5)) {
+                    outH = (static_cast<uint32_t>(sizeBuf[1]) << 8) | sizeBuf[2];
+                    outW = (static_cast<uint32_t>(sizeBuf[3]) << 8) | sizeBuf[4];
+                    return (outW > 0 && outH > 0);
+                }
+                break;
+            } else {
+                uint16_t len = (static_cast<uint16_t>(marker[2]) << 8) | marker[3];
+                if (len < 2) break;
+                f.seekg(len - 2, std::ios::cur);
+            }
+        }
+    }
+    return false;
 }
 
 } // namespace
@@ -284,6 +337,7 @@ MainWindow::MainWindow(HINSTANCE hInstance)
 }
 
 MainWindow::~MainWindow() {
+    clearThumbnailCache();
     if (fontRegular_) DeleteObject(fontRegular_);
     if (fontBold_) DeleteObject(fontBold_);
     if (fontTitle_) DeleteObject(fontTitle_);
@@ -292,6 +346,101 @@ MainWindow::~MainWindow() {
     if (fontIconsLarge_) DeleteObject(fontIconsLarge_);
     if (fontIconsSmall_) DeleteObject(fontIconsSmall_);
     if (darkEditBrush_) DeleteObject(darkEditBrush_);
+}
+
+void MainWindow::clearThumbnailCache() {
+    for (auto& pair : thumbCache_) {
+        if (pair.second.hBmp) {
+            DeleteObject(pair.second.hBmp);
+        }
+    }
+    thumbCache_.clear();
+}
+
+HBITMAP MainWindow::getThumbnailBitmap(const std::wstring& fullPath, int targetSize) {
+    if (fullPath.empty()) return nullptr;
+
+    auto it = thumbCache_.find(fullPath);
+    if (it != thumbCache_.end()) {
+        return it->second.hBmp;
+    }
+
+    IShellItem* pShellItem = nullptr;
+    HRESULT hr = ::SHCreateItemFromParsingName(fullPath.c_str(), nullptr, IID_PPV_ARGS(&pShellItem));
+    if (FAILED(hr) || !pShellItem) {
+        thumbCache_[fullPath] = { nullptr, 0, 0 };
+        return nullptr;
+    }
+
+    IShellItemImageFactory* pFactory = nullptr;
+    hr = pShellItem->QueryInterface(IID_PPV_ARGS(&pFactory));
+    pShellItem->Release();
+
+    if (FAILED(hr) || !pFactory) {
+        thumbCache_[fullPath] = { nullptr, 0, 0 };
+        return nullptr;
+    }
+
+    SIZE sz{ static_cast<LONG>(targetSize), static_cast<LONG>(targetSize) };
+    HBITMAP hBmp = nullptr;
+    hr = pFactory->GetImage(sz, SIIGBF_RESIZETOFIT, &hBmp);
+    pFactory->Release();
+
+    if (FAILED(hr) || !hBmp) {
+        thumbCache_[fullPath] = { nullptr, 0, 0 };
+        return nullptr;
+    }
+
+    BITMAP bm{};
+    ::GetObjectW(hBmp, sizeof(bm), &bm);
+    thumbCache_[fullPath] = { hBmp, bm.bmWidth, bm.bmHeight };
+    return hBmp;
+}
+
+void MainWindow::drawThumbnail(HDC hdc, HBITMAP hBmp, const RECT& targetRc) {
+    if (!hBmp) return;
+    BITMAP bm{};
+    if (::GetObjectW(hBmp, sizeof(bm), &bm) == 0) return;
+    int srcW = bm.bmWidth;
+    int srcH = bm.bmHeight;
+    if (srcW <= 0 || srcH <= 0) return;
+
+    int boxW = targetRc.right - targetRc.left;
+    int boxH = targetRc.bottom - targetRc.top;
+    if (boxW <= 0 || boxH <= 0) return;
+
+    float scale = std::min(static_cast<float>(boxW) / srcW, static_cast<float>(boxH) / srcH);
+    int fitW = std::clamp(static_cast<int>(srcW * scale), 1, boxW);
+    int fitH = std::clamp(static_cast<int>(srcH * scale), 1, boxH);
+    int dstX = targetRc.left + (boxW - fitW) / 2;
+    int dstY = targetRc.top + (boxH - fitH) / 2;
+
+    HDC memDC = ::CreateCompatibleDC(hdc);
+    if (!memDC) return;
+    HGDIOBJ oldBmp = ::SelectObject(memDC, hBmp);
+
+    ::SetStretchBltMode(hdc, HALFTONE);
+    ::SetBrushOrgEx(hdc, 0, 0, nullptr);
+    ::StretchBlt(hdc, dstX, dstY, fitW, fitH, memDC, 0, 0, srcW, srcH, SRCCOPY);
+
+    ::SelectObject(memDC, oldBmp);
+    ::DeleteDC(memDC);
+}
+
+void MainWindow::copyTextToClipboard(const std::wstring& text) {
+    if (text.empty() || !::OpenClipboard(hwnd_)) return;
+    ::EmptyClipboard();
+    size_t bytes = (text.length() + 1) * sizeof(wchar_t);
+    HGLOBAL hMem = ::GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (hMem) {
+        void* pMem = ::GlobalLock(hMem);
+        if (pMem) {
+            memcpy(pMem, text.c_str(), bytes);
+            ::GlobalUnlock(hMem);
+            ::SetClipboardData(CF_UNICODETEXT, hMem);
+        }
+    }
+    ::CloseClipboard();
 }
 
 void MainWindow::initKnownFolders() {
@@ -658,10 +807,11 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
         case kCmdSortDesc: sortAscending_ = false; filterAndSortItems(); InvalidateRect(hwnd_, nullptr, FALSE); break;
 
         // Layout Modes
-        case kCmdViewDetails: viewMode_ = ViewMode::Details; InvalidateRect(hwnd_, nullptr, FALSE); break;
-        case kCmdViewTiles: viewMode_ = ViewMode::Tiles; InvalidateRect(hwnd_, nullptr, FALSE); break;
-        case kCmdViewList: viewMode_ = ViewMode::List; InvalidateRect(hwnd_, nullptr, FALSE); break;
-        case kCmdViewGrid: viewMode_ = ViewMode::Grid; InvalidateRect(hwnd_, nullptr, FALSE); break;
+        case kCmdViewDetails: viewMode_ = ViewMode::Details; scrollOffset_ = 0; updateScrollInfo(); InvalidateRect(hwnd_, nullptr, FALSE); break;
+        case kCmdViewTiles: viewMode_ = ViewMode::Tiles; scrollOffset_ = 0; updateScrollInfo(); InvalidateRect(hwnd_, nullptr, FALSE); break;
+        case kCmdViewLargeIcons: viewMode_ = ViewMode::LargeIcons; scrollOffset_ = 0; updateScrollInfo(); InvalidateRect(hwnd_, nullptr, FALSE); break;
+        case kCmdViewMediumIcons: viewMode_ = ViewMode::MediumIcons; scrollOffset_ = 0; updateScrollInfo(); InvalidateRect(hwnd_, nullptr, FALSE); break;
+        case kCmdViewList: viewMode_ = ViewMode::List; scrollOffset_ = 0; updateScrollInfo(); InvalidateRect(hwnd_, nullptr, FALSE); break;
 
         // View Toggles
         case kCmdToggleCompact: toggleCompactView(); break;
@@ -975,10 +1125,11 @@ void MainWindow::onMouseMove(int x, int y) {
         else if (x >= 288 && x < 324) hoverCmdBtn_ = 5; // Share
         else if (x >= 328 && x < 364) hoverCmdBtn_ = 6; // Delete
         else if (x >= 380 && x < 464) hoverCmdBtn_ = 7; // Sort
-        else if (x >= 472 && x < 560) hoverCmdBtn_ = 8; // View
-        else if (x >= 568 && x < 660) hoverCmdBtn_ = 9; // Filter
-        else if (x >= 676 && x < 714) hoverCmdBtn_ = 10; // More
-        else if (x >= w - 108 && x < w - 12) hoverCmdBtn_ = 11; // Details
+        else if (x >= 472 && x < 604) hoverCmdBtn_ = 8; // View
+        else if (x >= 608 && x < 704) hoverCmdBtn_ = 9; // Filter
+        else if (x >= 716 && x < 754) hoverCmdBtn_ = 10; // More
+        else if (x >= w - 224 && x < w - 118) hoverCmdBtn_ = 11; // Preview
+        else if (x >= w - 110 && x < w - 12) hoverCmdBtn_ = 12; // Details
     }
     if (oldHoverCmd != hoverCmdBtn_) {
         RECT cmdBarRc{0, cmdTop, 2500, cmdBottom};
@@ -1023,12 +1174,40 @@ void MainWindow::onMouseMove(int x, int y) {
         }
     }
 
-    // 4. File Row Hover
-    int listTop = getListTop(contentTop);
-    if (x >= sidebarWidth_ && y >= listTop) {
-        int r = scrollOffset_ + ((y - listTop) / rowHeight_);
-        if (r >= 0 && r < static_cast<int>(filteredIndices_.size())) {
-            hoverRow_ = r;
+    // 4. File Row / Grid Card Hover
+    if (!isHomeView_ && (viewMode_ == ViewMode::LargeIcons || viewMode_ == ViewMode::MediumIcons || viewMode_ == ViewMode::Tiles)) {
+        int cardW = (viewMode_ == ViewMode::Tiles) ? 300 : (viewMode_ == ViewMode::LargeIcons ? 164 : 124);
+        int cardH = (viewMode_ == ViewMode::Tiles) ? 68 : (viewMode_ == ViewMode::LargeIcons ? 180 : 140);
+        int gapX = 14;
+        int gapY = (viewMode_ == ViewMode::Tiles) ? 12 : 16;
+        int startY = contentTop + filterBarHeight_ + ((viewMode_ == ViewMode::Tiles) ? 10 : 14);
+        RECT clientRc;
+        GetClientRect(hwnd_, &clientRc);
+        int rightMargin = (showDetailsPane_ ? detailsPaneWidth_ : (showPreviewPane_ ? previewPaneWidth_ : 0));
+        int effWidth = clientRc.right - rightMargin;
+        int cols = std::max(1, (effWidth - sidebarWidth_ - 24) / (cardW + gapX));
+
+        int relX = x - (sidebarWidth_ + 16);
+        int relY = y - startY + scrollOffset_ * 20;
+        if (relX >= 0 && relY >= 0) {
+            int c = relX / (cardW + gapX);
+            int r = relY / (cardH + gapY);
+            int inCardX = relX % (cardW + gapX);
+            int inCardY = relY % (cardH + gapY);
+            if (c < cols && inCardX < cardW && inCardY < cardH) {
+                int hIdx = r * cols + c;
+                if (hIdx >= 0 && hIdx < static_cast<int>(filteredIndices_.size())) {
+                    hoverRow_ = hIdx;
+                }
+            }
+        }
+    } else {
+        int listTop = getListTop(contentTop);
+        if (x >= sidebarWidth_ && y >= listTop) {
+            int r = scrollOffset_ + ((y - listTop) / rowHeight_);
+            if (r >= 0 && r < static_cast<int>(filteredIndices_.size())) {
+                hoverRow_ = r;
+            }
         }
     }
 
@@ -1134,13 +1313,15 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
             deleteSelectedItem();
         } else if (x >= 380 && x < 464) {
             showSortMenu(x, cmdBottom);
-        } else if (x >= 472 && x < 560) {
+        } else if (x >= 472 && x < 604) {
             showViewMenu(x, cmdBottom);
-        } else if (x >= 568 && x < 660) {
+        } else if (x >= 608 && x < 704) {
             showFilterMenu(x, cmdBottom);
-        } else if (x >= 676 && x < 714) {
+        } else if (x >= 716 && x < 754) {
             showMoreMenu(x, cmdBottom);
-        } else if (x >= clientRc.right - 108 && x < clientRc.right - 12) {
+        } else if (x >= clientRc.right - 224 && x < clientRc.right - 118) {
+            togglePreviewPane();
+        } else if (x >= clientRc.right - 110 && x < clientRc.right - 12) {
             toggleDetailsPane();
         }
         return;
@@ -1181,18 +1362,44 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
         return;
     }
 
-    // 5. Details Pane / Preview Pane Close button
+    // 5. Details Pane / Preview Pane Clicks (Close button & Action Buttons)
     if (showDetailsPane_ || showPreviewPane_) {
         int paneW = showDetailsPane_ ? detailsPaneWidth_ : previewPaneWidth_;
         int paneX = clientRc.right - paneW;
         if (x >= paneX && y >= contentTop) {
             // Close 'X' button
-            if (x >= clientRc.right - 30 && x < clientRc.right - 8 && y >= contentTop + 8 && y < contentTop + 30) {
+            if (x >= clientRc.right - 36 && x < clientRc.right - 10 && y >= contentTop + 10 && y < contentTop + 40) {
                 showDetailsPane_ = false;
                 showPreviewPane_ = false;
+                onResize(clientRc.right, clientRc.bottom);
                 InvalidateRect(hwnd_, nullptr, FALSE);
                 return;
             }
+
+            // Preview Pane Quick Actions at bottom
+            if (showPreviewPane_) {
+                int btnY = clientRc.bottom - statusBarHeight_ - 52;
+                if (y >= btnY && y < btnY + 36) {
+                    int targetIdx = (hoverRow_ >= 0 && hoverRow_ < static_cast<int>(filteredIndices_.size())) ? hoverRow_ : selectedRow_;
+                    if (targetIdx >= 0 && targetIdx < static_cast<int>(filteredIndices_.size())) {
+                        const auto& item = allItems_[filteredIndices_[targetIdx]];
+                        // Open File button
+                        if (x >= paneX + 16 && x < paneX + 185) {
+                            openItem(item);
+                            return;
+                        }
+                        // Copy Path button
+                        if (x >= paneX + 195 && x < clientRc.right - 16) {
+                            std::filesystem::path fullP = !item.fullPath.empty()
+                                ? std::filesystem::path(item.fullPath)
+                                : (isHomeView_ ? std::filesystem::path(item.location) / item.name : currentPath_ / item.name);
+                            copyTextToClipboard(fullP.wstring());
+                            return;
+                        }
+                    }
+                }
+            }
+            return;
         }
     }
 
@@ -1258,25 +1465,66 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
         }
     }
 
-    // 9. File List Row Click & Double-Click (File Execution)
-    int listTop = getListTop(contentTop);
-    if (x >= sidebarWidth_ && y >= listTop) {
-        int clickedRow = scrollOffset_ + ((y - listTop) / rowHeight_);
-        if (clickedRow >= 0 && clickedRow < static_cast<int>(filteredIndices_.size())) {
-            // Checkbox click
-            if (showCheckBoxes_ && x >= sidebarWidth_ + 8 && x < sidebarWidth_ + 26) {
-                if (static_cast<size_t>(clickedRow) < checkedRows_.size()) {
-                    checkedRows_[clickedRow] = !checkedRows_[clickedRow];
+    // 9. File List / Grid Cards Click & Double-Click (File Execution)
+    if (!isHomeView_ && (viewMode_ == ViewMode::LargeIcons || viewMode_ == ViewMode::MediumIcons || viewMode_ == ViewMode::Tiles)) {
+        int cardW = (viewMode_ == ViewMode::Tiles) ? 300 : (viewMode_ == ViewMode::LargeIcons ? 164 : 124);
+        int cardH = (viewMode_ == ViewMode::Tiles) ? 68 : (viewMode_ == ViewMode::LargeIcons ? 180 : 140);
+        int gapX = 14;
+        int gapY = (viewMode_ == ViewMode::Tiles) ? 12 : 16;
+        int startY = contentTop + filterBarHeight_ + ((viewMode_ == ViewMode::Tiles) ? 10 : 14);
+        int rightMargin = (showDetailsPane_ ? detailsPaneWidth_ : (showPreviewPane_ ? previewPaneWidth_ : 0));
+        int effWidth = clientRc.right - rightMargin;
+        int cols = std::max(1, (effWidth - sidebarWidth_ - 24) / (cardW + gapX));
+
+        int relX = x - (sidebarWidth_ + 16);
+        int relY = y - startY + scrollOffset_ * 20;
+        if (relX >= 0 && relY >= 0) {
+            int c = relX / (cardW + gapX);
+            int r = relY / (cardH + gapY);
+            int inCardX = relX % (cardW + gapX);
+            int inCardY = relY % (cardH + gapY);
+            if (c < cols && inCardX < cardW && inCardY < cardH) {
+                int clickedIdx = r * cols + c;
+                if (clickedIdx >= 0 && clickedIdx < static_cast<int>(filteredIndices_.size())) {
+                    // Checkbox click
+                    if (showCheckBoxes_ && inCardX <= 30 && inCardY <= 30) {
+                        if (static_cast<size_t>(clickedIdx) < checkedRows_.size()) {
+                            checkedRows_[clickedIdx] = !checkedRows_[clickedIdx];
+                            InvalidateRect(hwnd_, nullptr, FALSE);
+                            return;
+                        }
+                    }
+
+                    selectedRow_ = clickedIdx;
                     InvalidateRect(hwnd_, nullptr, FALSE);
+
+                    if (isDoubleClick) {
+                        openSelectedItem();
+                    }
                     return;
                 }
             }
+        }
+    } else {
+        int listTop = getListTop(contentTop);
+        if (x >= sidebarWidth_ && y >= listTop) {
+            int clickedRow = scrollOffset_ + ((y - listTop) / rowHeight_);
+            if (clickedRow >= 0 && clickedRow < static_cast<int>(filteredIndices_.size())) {
+                // Checkbox click
+                if (showCheckBoxes_ && x >= sidebarWidth_ + 8 && x < sidebarWidth_ + 26) {
+                    if (static_cast<size_t>(clickedRow) < checkedRows_.size()) {
+                        checkedRows_[clickedRow] = !checkedRows_[clickedRow];
+                        InvalidateRect(hwnd_, nullptr, FALSE);
+                        return;
+                    }
+                }
 
-            selectedRow_ = clickedRow;
-            InvalidateRect(hwnd_, nullptr, FALSE);
+                selectedRow_ = clickedRow;
+                InvalidateRect(hwnd_, nullptr, FALSE);
 
-            if (isDoubleClick) {
-                openSelectedItem();
+                if (isDoubleClick) {
+                    openSelectedItem();
+                }
             }
         }
     }
@@ -1369,16 +1617,36 @@ void MainWindow::onKeyDown(WPARAM key) {
 
     case '1':
         viewMode_ = ViewMode::Details;
+        scrollOffset_ = 0;
+        updateScrollInfo();
         InvalidateRect(hwnd_, nullptr, FALSE);
         break;
 
     case '2':
         viewMode_ = ViewMode::Tiles;
+        scrollOffset_ = 0;
+        updateScrollInfo();
         InvalidateRect(hwnd_, nullptr, FALSE);
         break;
 
     case '3':
+        viewMode_ = ViewMode::LargeIcons;
+        scrollOffset_ = 0;
+        updateScrollInfo();
+        InvalidateRect(hwnd_, nullptr, FALSE);
+        break;
+
+    case '4':
+        viewMode_ = ViewMode::MediumIcons;
+        scrollOffset_ = 0;
+        updateScrollInfo();
+        InvalidateRect(hwnd_, nullptr, FALSE);
+        break;
+
+    case '5':
         viewMode_ = ViewMode::List;
+        scrollOffset_ = 0;
+        updateScrollInfo();
         InvalidateRect(hwnd_, nullptr, FALSE);
         break;
 
@@ -1442,6 +1710,7 @@ void MainWindow::navigateTo(const std::filesystem::path& path) {
     }
 
     // Enumerate directory
+    clearThumbnailCache();
     allItems_.clear();
     try {
         for (const auto& entry : std::filesystem::directory_iterator(currentPath_, std::filesystem::directory_options::skip_permission_denied)) {
@@ -1497,6 +1766,7 @@ void MainWindow::navigateToHome() {
     }
 
     // Populate Recent Items from user profile / downloads
+    clearThumbnailCache();
     allItems_.clear();
     std::vector<std::filesystem::path> scanDirs = { pathDownloads_, pathDocuments_, pathPictures_, pathDesktop_ };
 
@@ -1922,26 +2192,32 @@ void MainWindow::showSortMenu(int x, int y) {
 void MainWindow::showViewMenu(int x, int y) {
     HMENU hMenu = CreatePopupMenu();
 
-    // Layout Modes
-    AppendMenuW(hMenu, (viewMode_ == ViewMode::Details ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdViewDetails, L"Details");
+    // Layout Modes (with Photos / Large icons mode first!)
+    AppendMenuW(hMenu, (viewMode_ == ViewMode::LargeIcons ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdViewLargeIcons, L"Large icons (Photos)");
+    AppendMenuW(hMenu, (viewMode_ == ViewMode::MediumIcons ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdViewMediumIcons, L"Medium icons");
     AppendMenuW(hMenu, (viewMode_ == ViewMode::Tiles ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdViewTiles, L"Tiles");
     AppendMenuW(hMenu, (viewMode_ == ViewMode::List ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdViewList, L"List");
-    AppendMenuW(hMenu, (viewMode_ == ViewMode::Grid ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdViewGrid, L"Large icons / Grid");
+    AppendMenuW(hMenu, (viewMode_ == ViewMode::Details ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdViewDetails, L"Details");
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+
+    // Panes directly in View menu for 1-click discovery
+    AppendMenuW(hMenu, (showPreviewPane_ ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdTogglePreviewPane, L"Preview pane\tP");
+    AppendMenuW(hMenu, (showDetailsPane_ ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdToggleDetailsPane, L"Details pane\tD");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
 
     // Compact View
-    AppendMenuW(hMenu, (compactView_ ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdToggleCompact, L"Compact view");
+    AppendMenuW(hMenu, (compactView_ ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdToggleCompact, L"Compact view\tC");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
 
     // Show Submenu
     HMENU hSubShow = CreatePopupMenu();
     AppendMenuW(hSubShow, (showNavigationPane_ ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdToggleNavPane, L"Navigation pane");
-    AppendMenuW(hSubShow, (showDetailsPane_ ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdToggleDetailsPane, L"Details pane");
     AppendMenuW(hSubShow, (showPreviewPane_ ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdTogglePreviewPane, L"Preview pane");
+    AppendMenuW(hSubShow, (showDetailsPane_ ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdToggleDetailsPane, L"Details pane");
     AppendMenuW(hSubShow, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(hSubShow, (showCheckBoxes_ ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdToggleCheckBoxes, L"Item check boxes");
     AppendMenuW(hSubShow, (showExtensions_ ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdToggleExtensions, L"File name extensions");
-    AppendMenuW(hSubShow, (showHiddenItems_ ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdToggleHidden, L"Hidden items");
+    AppendMenuW(hSubShow, (showHiddenItems_ ? MF_CHECKED : MF_UNCHECKED) | MF_STRING, kCmdToggleHidden, L"Hidden items\tH");
 
     AppendMenuW(hMenu, MF_POPUP, (UINT_PTR)hSubShow, L"Show");
 
@@ -2040,22 +2316,35 @@ void MainWindow::updateScrollInfo() {
     int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
     int listTop = getListTop(contentTop);
     int surfaceHeight = rc.bottom - listTop - statusBarHeight_;
-    int visibleRows = std::max(1, surfaceHeight / rowHeight_);
+
+    int totalUnits = static_cast<int>(filteredIndices_.size());
+    int pageSize = std::max(1, surfaceHeight / rowHeight_);
+
+    if (!isHomeView_ && (viewMode_ == ViewMode::LargeIcons || viewMode_ == ViewMode::MediumIcons || viewMode_ == ViewMode::Tiles)) {
+        int cardW = (viewMode_ == ViewMode::Tiles) ? 300 : (viewMode_ == ViewMode::LargeIcons ? 164 : 124);
+        int gapX = 14;
+        int rightMargin = (showDetailsPane_ ? detailsPaneWidth_ : (showPreviewPane_ ? previewPaneWidth_ : 0));
+        int effWidth = rc.right - rightMargin;
+        int cols = std::max(1, (effWidth - sidebarWidth_ - 24) / (cardW + gapX));
+        int totalRows = (totalUnits + cols - 1) / cols;
+        totalUnits = totalRows;
+        pageSize = std::max(1, surfaceHeight / (viewMode_ == ViewMode::Tiles ? 80 : 190));
+    }
 
     SCROLLINFO si{};
     si.cbSize = sizeof(si);
     si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
     si.nMin = 0;
-    si.nMax = std::max(0, static_cast<int>(filteredIndices_.size()) - 1);
-    si.nPage = visibleRows;
+    si.nMax = std::max(0, totalUnits - 1);
+    si.nPage = pageSize;
     si.nPos = scrollOffset_;
     SetScrollInfo(hwnd_, SB_VERT, &si, TRUE);
 }
 
-HICON MainWindow::getFileIcon(const std::wstring& path, bool isDir, const std::wstring& ext) {
+HICON MainWindow::getFileIcon(const std::wstring& path, bool isDir, const std::wstring& ext, bool isLarge) {
     (void)path;
     SHFILEINFOW sfi{};
-    DWORD flags = SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES;
+    DWORD flags = SHGFI_ICON | (isLarge ? SHGFI_LARGEICON : SHGFI_SMALLICON) | SHGFI_USEFILEATTRIBUTES;
     if (isDir) {
         SHGetFileInfoW(L"folder", FILE_ATTRIBUTE_DIRECTORY, &sfi, sizeof(sfi), flags);
     } else {
@@ -2316,33 +2605,47 @@ void MainWindow::paintCommandBar(HDC hdc, int width) {
     drawDropdownBtn(380, 84, 7, L"\uE8CB", RGB(96, 205, 255), L"Sort"); // Sort icon Cyan
 
     const wchar_t* viewLabel = L"View";
-    if (viewMode_ == ViewMode::Tiles) viewLabel = L"Tiles";
+    if (viewMode_ == ViewMode::LargeIcons) viewLabel = L"Large icons";
+    else if (viewMode_ == ViewMode::MediumIcons) viewLabel = L"Medium icons";
+    else if (viewMode_ == ViewMode::Tiles) viewLabel = L"Tiles";
     else if (viewMode_ == ViewMode::List) viewLabel = L"List";
-    else if (viewMode_ == ViewMode::Grid) viewLabel = L"Grid";
-    drawDropdownBtn(472, 88, 8, L"\uE8A9", RGB(215, 215, 215), viewLabel);
+    else if (viewMode_ == ViewMode::Details) viewLabel = L"Details";
+    drawDropdownBtn(472, 128, 8, L"\uE8A9", RGB(215, 215, 215), viewLabel);
 
     std::wstring filterLabel = (filterCategory_ == FilterCategory::All && dateFilter_ == DateFilter::All && sizeFilter_ == SizeFilter::All)
         ? L"Filter" : L"Filtered";
-    drawDropdownBtn(568, 92, 9, L"\uE71C", RGB(215, 215, 215), filterLabel.c_str());
+    drawDropdownBtn(608, 92, 9, L"\uE71C", RGB(215, 215, 215), filterLabel.c_str());
 
     // Divider 3 before More
-    MoveToEx(hdc, 668, cmdTop + 11, nullptr);
-    LineTo(hdc, 668, cmdTop + 37);
+    MoveToEx(hdc, 708, cmdTop + 11, nullptr);
+    LineTo(hdc, 708, cmdTop + 37);
 
     // 4. More button "···"
-    RECT moreRc{676, btnY, 714, btnY + 36};
+    RECT moreRc{716, btnY, 754, btnY + 36};
     drawBtnHoverOrActive(moreRc, 10);
     SelectObject(hdc, fontIcons_);
     SetTextColor(hdc, RGB(215, 215, 215));
     DrawTextW(hdc, L"\uE712", 1, &moreRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-    // Divider 4 before Details
-    MoveToEx(hdc, width - 116, cmdTop + 11, nullptr);
-    LineTo(hdc, width - 116, cmdTop + 37);
+    // Divider 4 before Preview & Details
+    MoveToEx(hdc, width - 232, cmdTop + 11, nullptr);
+    LineTo(hdc, width - 232, cmdTop + 37);
 
-    // 5. Details button on far right (toggles Details Pane)
-    RECT detRc{width - 108, btnY, width - 12, btnY + 36};
-    drawBtnHoverOrActive(detRc, 11, showDetailsPane_);
+    // 5a. Preview button (toggles Preview Pane)
+    RECT prevRc{width - 224, btnY, width - 118, btnY + 36};
+    drawBtnHoverOrActive(prevRc, 11, showPreviewPane_);
+    SelectObject(hdc, fontIconsSmall_);
+    SetTextColor(hdc, showPreviewPane_ ? RGB(96, 205, 255) : RGB(215, 215, 215));
+    RECT prevIconRc{prevRc.left + 10, prevRc.top, prevRc.left + 28, prevRc.bottom};
+    DrawTextW(hdc, L"\uE8A1", 1, &prevIconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    SelectObject(hdc, fontRegular_);
+    SetTextColor(hdc, showPreviewPane_ ? RGB(96, 205, 255) : RGB(235, 235, 235));
+    RECT prevTextRc{prevRc.left + 30, prevRc.top, prevRc.right - 8, prevRc.bottom};
+    DrawTextW(hdc, L"Preview", 7, &prevTextRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+    // 5b. Details button on far right (toggles Details Pane)
+    RECT detRc{width - 110, btnY, width - 12, btnY + 36};
+    drawBtnHoverOrActive(detRc, 12, showDetailsPane_);
     SelectObject(hdc, fontIconsSmall_);
     SetTextColor(hdc, showDetailsPane_ ? RGB(96, 205, 255) : RGB(215, 215, 215));
     RECT detIconRc{detRc.left + 10, detRc.top, detRc.left + 28, detRc.bottom};
@@ -2859,9 +3162,125 @@ void MainWindow::paintTilesView(HDC hdc, int width, int height) {
     }
 }
 
+void MainWindow::paintLargeIconsView(HDC hdc, int width, int height, bool isLarge) {
+    int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
+    int surfaceLeft = sidebarWidth_;
+    int rightMargin = (showDetailsPane_ ? detailsPaneWidth_ : (showPreviewPane_ ? previewPaneWidth_ : 0));
+    int effWidth = width - rightMargin;
+
+    paintFilterPills(hdc, width, contentTop);
+
+    int startY = contentTop + filterBarHeight_ + 14;
+    int cardW = isLarge ? 164 : 124;
+    int cardH = isLarge ? 180 : 140;
+    int thumbW = isLarge ? 144 : 108;
+    int thumbH = isLarge ? 112 : 82;
+    int gapX = 14;
+    int gapY = 16;
+    int cols = std::max(1, (effWidth - surfaceLeft - 24) / (cardW + gapX));
+
+    SelectObject(hdc, fontRegular_);
+    SetBkMode(hdc, TRANSPARENT);
+
+    for (size_t i = 0; i < filteredIndices_.size(); ++i) {
+        int r = static_cast<int>(i);
+        int col = r % cols;
+        int row = r / cols;
+        int cx = surfaceLeft + 16 + col * (cardW + gapX);
+        int cy = startY + row * (cardH + gapY) - scrollOffset_ * 20;
+
+        if (cy + cardH < startY || cy > height - statusBarHeight_) continue;
+
+        RECT cardRc{cx, cy, cx + cardW, cy + cardH};
+        bool isSel = (r == selectedRow_);
+        bool isHov = (r == hoverRow_);
+
+        // Apple Glassmorphism styling:
+        // Frosted dark background with luminous edge highlight
+        COLORREF bgCol = isSel ? RGB(26, 48, 76) : (isHov ? RGB(36, 40, 52) : RGB(28, 30, 36));
+        COLORREF bdrCol = isSel ? RGB(96, 205, 255) : (isHov ? RGB(72, 80, 104) : RGB(46, 50, 62));
+        drawRoundedRect(hdc, cardRc, 8, bgCol, bdrCol);
+
+        const auto& item = allItems_[filteredIndices_[i]];
+        std::filesystem::path fullPath = !item.fullPath.empty()
+            ? std::filesystem::path(item.fullPath)
+            : (isHomeView_ ? std::filesystem::path(item.location) / item.name : currentPath_ / item.name);
+
+        // Thumbnail Frame inside card
+        RECT thumbBox{cx + (cardW - thumbW) / 2, cy + 8, cx + (cardW - thumbW) / 2 + thumbW, cy + 8 + thumbH};
+        COLORREF thumbBg = isSel ? RGB(18, 34, 54) : RGB(18, 19, 24);
+        COLORREF thumbBdr = isSel ? RGB(60, 140, 200) : RGB(40, 44, 54);
+        drawRoundedRect(hdc, thumbBox, 6, thumbBg, thumbBdr);
+
+        // Render actual photo/image/video thumbnail
+        std::wstring ext = toLower(item.extension);
+        bool isImageOrVideo = (!item.isDirectory && (
+            ext == L"png" || ext == L"jpg" || ext == L"jpeg" || ext == L"bmp" ||
+            ext == L"webp" || ext == L"gif" || ext == L"ico" || ext == L"jfif" ||
+            ext == L"mp4" || ext == L"mkv" || ext == L"avi" || ext == L"mov"));
+
+        bool thumbDrawn = false;
+        if (isImageOrVideo) {
+            HBITMAP hBmp = getThumbnailBitmap(fullPath.wstring(), isLarge ? 256 : 160);
+            if (hBmp) {
+                // Inset by 2px inside thumbBox
+                RECT drawRc{thumbBox.left + 2, thumbBox.top + 2, thumbBox.right - 2, thumbBox.bottom - 2};
+                drawThumbnail(hdc, hBmp, drawRc);
+                thumbDrawn = true;
+            }
+        }
+
+        if (!thumbDrawn) {
+            // Draw Shell Icon (48x48 or 32x32)
+            HICON hIcon = getFileIcon(item.name, item.isDirectory, item.extension, isLarge);
+            if (hIcon) {
+                int iconSz = isLarge ? 48 : 36;
+                int ix = thumbBox.left + (thumbW - iconSz) / 2;
+                int iy = thumbBox.top + (thumbH - iconSz) / 2;
+                DrawIconEx(hdc, ix, iy, hIcon, iconSz, iconSz, 0, nullptr, DI_NORMAL);
+                DestroyIcon(hIcon);
+            }
+        }
+
+        // Checkbox on top-left of card (Apple style pill checkbox)
+        if (showCheckBoxes_ || (checkedRows_.size() > i && checkedRows_[i])) {
+            RECT cbRc{cx + 8, cy + 10, cx + 26, cy + 28};
+            bool isChecked = (checkedRows_.size() > i && checkedRows_[i]);
+            COLORREF cbBg = isChecked ? RGB(96, 205, 255) : (isHov ? RGB(45, 45, 55) : RGB(30, 32, 40));
+            COLORREF cbBdr = isChecked ? RGB(96, 205, 255) : RGB(80, 85, 100);
+            drawRoundedRect(hdc, cbRc, 4, cbBg, cbBdr);
+            if (isChecked) {
+                SelectObject(hdc, fontIconsSmall_);
+                SetTextColor(hdc, RGB(0, 0, 0));
+                DrawTextW(hdc, L"\uE73E", 1, &cbRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            }
+        }
+
+        // File Name (with extension toggle applied)
+        std::wstring displayName = item.name;
+        if (!showExtensions_ && !item.isDirectory && !item.extension.empty()) {
+            size_t dotPos = displayName.find_last_of(L'.');
+            if (dotPos != std::wstring::npos) displayName = displayName.substr(0, dotPos);
+        }
+
+        SelectObject(hdc, fontSmall_);
+        SetTextColor(hdc, isSel ? RGB(255, 255, 255) : (isHov ? RGB(245, 245, 245) : RGB(225, 225, 225)));
+        RECT nameRc{cx + 6, cy + thumbH + 12, cx + cardW - 6, cy + cardH - 6};
+        DrawTextW(hdc, displayName.c_str(), -1, &nameRc, DT_CENTER | DT_WORDBREAK | DT_END_ELLIPSIS | DT_NOPREFIX);
+    }
+}
+
 void MainWindow::paintDirectoryView(HDC hdc, int width, int height) {
     if (viewMode_ == ViewMode::Tiles) {
         paintTilesView(hdc, width, height);
+        return;
+    }
+    if (viewMode_ == ViewMode::LargeIcons) {
+        paintLargeIconsView(hdc, width, height, true);
+        return;
+    }
+    if (viewMode_ == ViewMode::MediumIcons) {
+        paintLargeIconsView(hdc, width, height, false);
         return;
     }
 
@@ -3075,11 +3494,13 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
     int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
     RECT paneRc{paneX, contentTop, width, height - statusBarHeight_};
 
-    HBRUSH bgBrush = CreateSolidBrush(RGB(25, 25, 25));
+    // Apple Frosted Obsidian Glass background
+    HBRUSH bgBrush = CreateSolidBrush(RGB(22, 24, 30));
     FillRect(hdc, &paneRc, bgBrush);
     DeleteObject(bgBrush);
 
-    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(42, 42, 42));
+    // 1px Luminous left edge
+    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(48, 52, 66));
     SelectObject(hdc, borderPen);
     MoveToEx(hdc, paneX, contentTop, nullptr);
     LineTo(hdc, paneX, height - statusBarHeight_);
@@ -3087,8 +3508,8 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
 
     SetBkMode(hdc, TRANSPARENT);
 
-    // Header
-    RECT titleRc{paneX + 18, contentTop + 14, paneX + 180, contentTop + 40};
+    // Header Title
+    RECT titleRc{paneX + 18, contentTop + 14, paneX + 130, contentTop + 40};
     SelectObject(hdc, fontTitle_);
     SetTextColor(hdc, RGB(255, 255, 255));
     DrawTextW(hdc, L"Preview", 7, &titleRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
@@ -3099,46 +3520,183 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
     SetTextColor(hdc, RGB(160, 160, 160));
     DrawTextW(hdc, L"×", 1, &closeRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-    if (selectedRow_ < 0 || selectedRow_ >= static_cast<int>(filteredIndices_.size())) {
-        RECT msgRc{paneX + 24, contentTop + 90, width - 24, contentTop + 160};
-        SelectObject(hdc, fontRegular_);
-        SetTextColor(hdc, RGB(140, 140, 140));
-        DrawTextW(hdc, L"Select a file to preview its contents.", -1, &msgRc, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
+    // Determine target item: active hover item or selected item
+    int targetIdx = (hoverRow_ >= 0 && hoverRow_ < static_cast<int>(filteredIndices_.size()))
+        ? hoverRow_
+        : selectedRow_;
+
+    if (targetIdx < 0 || targetIdx >= static_cast<int>(filteredIndices_.size())) {
+        // Apple Empty State
+        RECT iconRc{paneX + 20, contentTop + 110, width - 20, contentTop + 160};
+        SelectObject(hdc, fontIconsLarge_);
+        SetTextColor(hdc, RGB(80, 88, 110));
+        DrawTextW(hdc, L"\uE8A1", 1, &iconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        RECT msgRc{paneX + 24, contentTop + 175, width - 24, contentTop + 205};
+        SelectObject(hdc, fontBold_);
+        SetTextColor(hdc, RGB(215, 220, 235));
+        DrawTextW(hdc, L"Quick Look Preview", -1, &msgRc, DT_CENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+        RECT subRc{paneX + 24, contentTop + 210, width - 24, contentTop + 260};
+        SelectObject(hdc, fontSmall_);
+        SetTextColor(hdc, RGB(140, 145, 160));
+        DrawTextW(hdc, L"Hover over or select any photo, document, or media file to inspect its full contents.", -1, &subRc, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
         return;
     }
 
-    const auto& item = allItems_[filteredIndices_[selectedRow_]];
+    const auto& item = allItems_[filteredIndices_[targetIdx]];
     std::filesystem::path fullPath = !item.fullPath.empty()
         ? std::filesystem::path(item.fullPath)
         : (isHomeView_ ? std::filesystem::path(item.location) / item.name : currentPath_ / item.name);
 
-    // Text File Preview (.txt, .cpp, .h, .json, .md, .py, etc.)
     std::wstring ext = toLower(item.extension);
-    if (!item.isDirectory && (ext == L"txt" || ext == L"cpp" || ext == L"h" || ext == L"json" || ext == L"md" || ext == L"py" || ext == L"cmake" || ext == L"xml" || ext == L"log")) {
+    bool isImage = (!item.isDirectory && (ext == L"png" || ext == L"jpg" || ext == L"jpeg" || ext == L"bmp" || ext == L"webp" || ext == L"gif" || ext == L"ico" || ext == L"jfif" || ext == L"tiff"));
+    bool isVideo = (!item.isDirectory && (ext == L"mp4" || ext == L"mkv" || ext == L"avi" || ext == L"mov" || ext == L"wmv" || ext == L"webm"));
+    bool isAudio = (!item.isDirectory && (ext == L"mp3" || ext == L"wav" || ext == L"flac" || ext == L"aac" || ext == L"m4a"));
+    bool isCode = (!item.isDirectory && (ext == L"txt" || ext == L"cpp" || ext == L"h" || ext == L"c" || ext == L"hpp" || ext == L"json" || ext == L"md" || ext == L"py" || ext == L"cmake" || ext == L"xml" || ext == L"log" || ext == L"csv" || ext == L"ini" || ext == L"bat" || ext == L"ps1" || ext == L"sh" || ext == L"yaml" || ext == L"yml" || ext == L"rs" || ext == L"js" || ext == L"ts" || ext == L"html" || ext == L"css"));
+
+    // Category Pill in header
+    std::wstring catLabel = item.isDirectory ? L"Folder" : (isImage ? L"Photo" : (isVideo ? L"Video" : (isAudio ? L"Audio" : (isCode ? L"Document" : L"File"))));
+    RECT catPill{paneX + 115, contentTop + 16, paneX + 205, contentTop + 36};
+    drawRoundedRect(hdc, catPill, 10, RGB(34, 38, 52), RGB(60, 68, 92));
+    SelectObject(hdc, fontSmall_);
+    SetTextColor(hdc, RGB(120, 195, 255));
+    DrawTextW(hdc, catLabel.c_str(), -1, &catPill, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+    // File Name Title
+    RECT nameRc{paneX + 18, contentTop + 50, width - 18, contentTop + 85};
+    SelectObject(hdc, fontBold_);
+    SetTextColor(hdc, RGB(255, 255, 255));
+    DrawTextW(hdc, item.name.c_str(), -1, &nameRc, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS | DT_NOPREFIX);
+
+    // Subtext: Location / size
+    RECT subRc{paneX + 18, contentTop + 86, width - 18, contentTop + 104};
+    SelectObject(hdc, fontSmall_);
+    SetTextColor(hdc, RGB(150, 155, 170));
+    std::wstring subInfo = item.isDirectory ? L"Directory" : (formatSize(item.size) + L"  ·  Modified " + formatTime(item.mtime));
+    DrawTextW(hdc, subInfo.c_str(), -1, &subRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+
+    int curY = contentTop + 114;
+
+    // Content Display
+    if (isImage || isVideo) {
+        // Photo Preview Frame
+        int frameH = 220;
+        RECT frameRc{paneX + 16, curY, width - 16, curY + frameH};
+        drawRoundedRect(hdc, frameRc, 8, RGB(14, 15, 20), RGB(52, 56, 72));
+
+        HBITMAP hBmp = getThumbnailBitmap(fullPath.wstring(), 512);
+        if (hBmp) {
+            RECT drawRc{frameRc.left + 4, frameRc.top + 4, frameRc.right - 4, frameRc.bottom - 4};
+            drawThumbnail(hdc, hBmp, drawRc);
+        } else {
+            HICON hIcon = getFileIcon(item.name, item.isDirectory, item.extension, true);
+            if (hIcon) {
+                DrawIconEx(hdc, frameRc.left + (frameRc.right - frameRc.left - 64) / 2, frameRc.top + (frameH - 64) / 2, hIcon, 64, 64, 0, nullptr, DI_NORMAL);
+                DestroyIcon(hIcon);
+            }
+        }
+
+        curY += frameH + 12;
+
+        // Metadata Pills
+        uint32_t imgW = 0, imgH = 0;
+        bool hasDim = getImageDimensions(fullPath.wstring(), imgW, imgH);
+        if (hasDim) {
+            wchar_t dimBuf[64];
+            swprintf_s(dimBuf, L"%u × %u px", imgW, imgH);
+            RECT dimPill{paneX + 16, curY, paneX + 130, curY + 26};
+            drawRoundedRect(hdc, dimPill, 6, RGB(30, 34, 46), RGB(54, 60, 80));
+            SelectObject(hdc, fontSmall_);
+            SetTextColor(hdc, RGB(220, 225, 240));
+            DrawTextW(hdc, dimBuf, -1, &dimPill, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+
+        std::wstring extUpper = toUpper(ext) + (isImage ? L" Image" : L" Video");
+        RECT extPill{hasDim ? paneX + 136 : paneX + 16, curY, hasDim ? paneX + 250 : paneX + 140, curY + 26};
+        drawRoundedRect(hdc, extPill, 6, RGB(30, 34, 46), RGB(54, 60, 80));
+        SelectObject(hdc, fontSmall_);
+        SetTextColor(hdc, RGB(120, 195, 255));
+        DrawTextW(hdc, extUpper.c_str(), -1, &extPill, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        RECT szPill{hasDim ? paneX + 256 : paneX + 146, curY, width - 16, curY + 26};
+        drawRoundedRect(hdc, szPill, 6, RGB(30, 34, 46), RGB(54, 60, 80));
+        SelectObject(hdc, fontSmall_);
+        SetTextColor(hdc, RGB(200, 205, 220));
+        std::wstring szStr = formatSize(item.size);
+        DrawTextW(hdc, szStr.c_str(), -1, &szPill, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        curY += 38;
+    } else if (isCode) {
+        // Document / Code Viewer
+        int boxBottom = height - statusBarHeight_ - 66;
+        RECT codeBox{paneX + 16, curY, width - 16, boxBottom};
+        drawRoundedRect(hdc, codeBox, 8, RGB(14, 15, 20), RGB(46, 50, 64));
+
         std::ifstream file(fullPath);
         if (file.is_open()) {
             std::string line;
-            int textY = contentTop + 55;
+            int textY = curY + 10;
+            int lineNum = 1;
             SelectObject(hdc, fontSmall_);
-            SetTextColor(hdc, RGB(225, 225, 225));
 
-            int lineCount = 0;
-            while (std::getline(file, line) && lineCount++ < 35 && textY < height - statusBarHeight_ - 24) {
+            while (std::getline(file, line) && lineNum <= 28 && textY < boxBottom - 20) {
+                wchar_t numBuf[16];
+                swprintf_s(numBuf, L"%2d", lineNum);
+                RECT numRc{codeBox.left + 8, textY, codeBox.left + 32, textY + 20};
+                SetTextColor(hdc, RGB(90, 95, 115));
+                DrawTextW(hdc, numBuf, -1, &numRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+
                 std::wstring wLine(line.begin(), line.end());
-                RECT lineRc{paneX + 18, textY, width - 18, textY + 22};
+                RECT lineRc{codeBox.left + 40, textY, codeBox.right - 8, textY + 20};
+                SetTextColor(hdc, RGB(225, 230, 240));
                 DrawTextW(hdc, wLine.c_str(), -1, &lineRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
-                textY += 22;
+                textY += 20;
+                lineNum++;
             }
-            return;
         }
+    } else {
+        // Folder / Generic File Card
+        int frameH = 140;
+        RECT frameRc{paneX + 16, curY, width - 16, curY + frameH};
+        drawRoundedRect(hdc, frameRc, 8, RGB(14, 15, 20), RGB(46, 50, 64));
+
+        HICON hIcon = getFileIcon(item.name, item.isDirectory, item.extension, true);
+        if (hIcon) {
+            DrawIconEx(hdc, frameRc.left + (frameRc.right - frameRc.left - 64) / 2, frameRc.top + 20, hIcon, 64, 64, 0, nullptr, DI_NORMAL);
+            DestroyIcon(hIcon);
+        }
+
+        RECT typeRc{frameRc.left + 10, frameRc.top + 95, frameRc.right - 10, frameRc.bottom - 10};
+        SelectObject(hdc, fontRegular_);
+        SetTextColor(hdc, RGB(210, 215, 230));
+        std::wstring typeDesc = item.isDirectory ? L"File Folder" : (item.extension.empty() ? L"Binary File" : (toUpper(item.extension) + L" Document"));
+        DrawTextW(hdc, typeDesc.c_str(), -1, &typeRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 
-    // Fallback info preview
-    RECT msgRc{paneX + 24, contentTop + 90, width - 24, contentTop + 160};
+    // Apple Quick Action Capsule Buttons at bottom of Preview Pane
+    int btnY = height - statusBarHeight_ - 52;
+    RECT openBtnRc{paneX + 16, btnY, paneX + 185, btnY + 36};
+    drawRoundedRect(hdc, openBtnRc, 6, RGB(27, 50, 72), RGB(96, 205, 255));
+    SelectObject(hdc, fontIconsSmall_);
+    SetTextColor(hdc, RGB(96, 205, 255));
+    RECT oIconRc{openBtnRc.left + 10, btnY, openBtnRc.left + 30, btnY + 36};
+    DrawTextW(hdc, L"\uE8A7", 1, &oIconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     SelectObject(hdc, fontRegular_);
-    SetTextColor(hdc, RGB(160, 160, 160));
-    std::wstring prevMsg = L"No preview available for " + item.name;
-    DrawTextW(hdc, prevMsg.c_str(), -1, &msgRc, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
+    SetTextColor(hdc, RGB(255, 255, 255));
+    RECT oTextRc{openBtnRc.left + 32, btnY, openBtnRc.right - 8, btnY + 36};
+    DrawTextW(hdc, L"Open File", 9, &oTextRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+    RECT copyBtnRc{paneX + 195, btnY, width - 16, btnY + 36};
+    drawRoundedRect(hdc, copyBtnRc, 6, RGB(34, 38, 50), RGB(60, 68, 88));
+    SelectObject(hdc, fontIconsSmall_);
+    SetTextColor(hdc, RGB(180, 185, 200));
+    RECT cIconRc{copyBtnRc.left + 8, btnY, copyBtnRc.left + 28, btnY + 36};
+    DrawTextW(hdc, L"\uE8C8", 1, &cIconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    SelectObject(hdc, fontRegular_);
+    SetTextColor(hdc, RGB(220, 225, 235));
+    RECT cTextRc{copyBtnRc.left + 30, btnY, copyBtnRc.right - 6, btnY + 36};
+    DrawTextW(hdc, L"Copy Path", 9, &cTextRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 }
 
 void MainWindow::paintStatusBar(HDC hdc, int width, int height) {

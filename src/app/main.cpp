@@ -33,9 +33,12 @@ int WINAPI wWinMain(
     }
 
     std::wstring initialPath;
-    if (__argc > 1 && __wargv && __wargv[1]) {
-        initialPath = __wargv[1];
-    } else if (lpCmdLine) {
+    if (__argc > 1 && __wargv) {
+        for (int i = 1; i < __argc; ++i) {
+            if (i > 1) initialPath += L" ";
+            initialPath += __wargv[i];
+        }
+    } else if (lpCmdLine && wcslen(lpCmdLine) > 0) {
         initialPath = lpCmdLine;
     }
     while (!initialPath.empty() && (initialPath.front() == L' ' || initialPath.front() == L'\t' || initialPath.front() == L'"')) {

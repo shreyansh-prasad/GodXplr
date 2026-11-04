@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <memory>
 #include <functional>
+#include <unordered_map>
 
 #include "godxplr/ui/theme/design_tokens.h"
 
@@ -24,8 +25,16 @@ namespace gx::app {
 enum class ViewMode {
     Details,
     Tiles,
+    LargeIcons,
+    MediumIcons,
     List,
-    Grid
+    Grid = LargeIcons
+};
+
+struct CachedThumbnail {
+    HBITMAP hBmp{nullptr};
+    int width{0};
+    int height{0};
 };
 
 enum class SortColumn {
@@ -152,6 +161,7 @@ private:
     void paintHomeView(HDC hdc, int width, int height);
     void paintDirectoryView(HDC hdc, int width, int height);
     void paintTilesView(HDC hdc, int width, int height);
+    void paintLargeIconsView(HDC hdc, int width, int height, bool isLarge = true);
     void paintDetailsPane(HDC hdc, int width, int height);
     void paintPreviewPane(HDC hdc, int width, int height);
     void paintStatusBar(HDC hdc, int width, int height);
@@ -215,7 +225,13 @@ private:
     void initSidebar();
     void initKnownFolders();
     void initFilterPills();
-    HICON getFileIcon(const std::wstring& path, bool isDir, const std::wstring& ext);
+    HICON getFileIcon(const std::wstring& path, bool isDir, const std::wstring& ext, bool isLarge = false);
+    void clearThumbnailCache();
+    HBITMAP getThumbnailBitmap(const std::wstring& fullPath, int targetSize);
+    void drawThumbnail(HDC hdc, HBITMAP hBmp, const RECT& targetRc);
+    void copyTextToClipboard(const std::wstring& text);
+
+    std::unordered_map<std::wstring, CachedThumbnail> thumbCache_;
 
     HINSTANCE hInstance_{nullptr};
     HWND hwnd_{nullptr};
