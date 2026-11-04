@@ -11,6 +11,7 @@
 #include <sstream>
 #include <fstream>
 #include <chrono>
+#include <unordered_set>
 
 #include "godxplr/core/fuzzy_matcher.h"
 #include "godxplr/platform/shell_context_menu.h"
@@ -148,6 +149,159 @@ std::wstring toLower(std::wstring_view s) {
 std::wstring toUpper(std::wstring_view s) {
     std::wstring out(s);
     std::transform(out.begin(), out.end(), out.begin(), ::towupper);
+    return out;
+}
+
+bool isWordDelimiter(wchar_t c) {
+    return c == L' ' || c == L'_' || c == L'-' || c == L'.' || c == L':' || c == L';' || c == L',' ||
+           c == L'/' || c == L'\\' || c == L'(' || c == L')' || c == L'[' || c == L']' || c == L'{' || c == L'}';
+}
+
+std::vector<std::wstring> tokenizeQuery(std::wstring_view text) {
+    std::vector<std::wstring> tokens;
+    std::wstring cur;
+    for (wchar_t c : text) {
+        if (isWordDelimiter(c)) {
+            if (!cur.empty()) {
+                if (cur.length() >= 2) tokens.push_back(cur);
+                cur.clear();
+            }
+        } else {
+            cur.push_back(static_cast<wchar_t>(towlower(c)));
+        }
+    }
+    if (cur.length() >= 2) tokens.push_back(cur);
+    return tokens;
+}
+
+uint32_t damerauLevenshtein(std::wstring_view s1, std::wstring_view s2) {
+    const size_t len1 = s1.size(), len2 = s2.size();
+    if (len1 == 0) return static_cast<uint32_t>(len2);
+    if (len2 == 0) return static_cast<uint32_t>(len1);
+    std::vector<uint32_t> col(len2 + 1);
+    for (size_t y = 0; y <= len2; ++y) col[y] = static_cast<uint32_t>(y);
+    for (size_t x = 1; x <= len1; ++x) {
+        col[0] = static_cast<uint32_t>(x);
+        uint32_t lastDiag = static_cast<uint32_t>(x - 1);
+        for (size_t y = 1; y <= len2; ++y) {
+            uint32_t oldCol = col[y];
+            uint32_t cost = (s1[x - 1] == s2[y - 1]) ? 0 : 1;
+            col[y] = std::min({ col[y] + 1, col[y - 1] + 1, lastDiag + cost });
+            lastDiag = oldCol;
+        }
+    }
+    return col[len2];
+}
+
+struct MatchResult {
+    int score{0};
+    bool isExact{false};
+    bool isApproximate{false};
+    std::wstring reason;
+};
+
+MatchResult scoreCandidate(
+    std::wstring_view candName,
+    std::wstring_view rawQuery,
+    const std::vector<std::wstring>& qTokens,
+    const std::wstring& qLower,
+    const std::wstring& qCompact)
+{
+    MatchResult out;
+    if (candName.empty() || rawQuery.empty()) return out;
+
+    std::wstring candLower = toLower(candName);
+
+    // 1. Direct continuous substring match
+    size_t subPos = candLower.find(qLower);
+    if (subPos != std::wstring::npos) {
+        out.score = 1000 + static_cast<int>(qLower.length() * 10);
+        if (subPos == 0) out.score += 50; // Prefix bonus
+        out.isExact = true;
+        out.reason = L"Exact substring match";
+        return out;
+    }
+
+    auto candTokens = tokenizeQuery(candName);
+    std::wstring candCompact;
+    for (const auto& t : candTokens) candCompact += t;
+
+    // 2. Compact sequence match (e.g. "batmanark" in "batmanark.exe")
+    if (!qCompact.empty() && candCompact.find(qCompact) != std::wstring::npos) {
+        out.score = 850;
+        out.isExact = true;
+        out.reason = L"Compact sequence match";
+        return out;
+    }
+
+    int matchedTokens = 0;
+    std::vector<std::wstring> matchedList;
+
+    for (const auto& qt : qTokens) {
+        bool tokMatched = false;
+
+        // Substring inside candidate lowercase
+        if (candLower.find(qt) != std::wstring::npos) {
+            out.score += 200;
+            tokMatched = true;
+            matchedList.push_back(qt);
+        } else {
+            // Check prefix or partial match against candidate tokens
+            for (const auto& ct : candTokens) {
+                if ((ct.length() >= 3 && qt.find(ct) != std::wstring::npos) ||
+                    (qt.length() >= 3 && ct.find(qt) != std::wstring::npos)) {
+                    out.score += 150;
+                    tokMatched = true;
+                    matchedList.push_back(ct);
+                    break;
+                } else if (qt.length() >= 4 && ct.length() >= 4 && damerauLevenshtein(qt, ct) <= 2) {
+                    out.score += 90;
+                    tokMatched = true;
+                    matchedList.push_back(ct);
+                    break;
+                }
+            }
+        }
+
+        if (tokMatched) {
+            matchedTokens++;
+        }
+    }
+
+    // Subsequence match on compacted candidate (e.g. "BATMANARK" vs "batman" + "arkham")
+    if (matchedTokens < static_cast<int>(qTokens.size()) && candCompact.length() >= 3) {
+        for (const auto& qt : qTokens) {
+            if (qt.length() >= 3) {
+                std::wstring prefix3 = qt.substr(0, std::min<size_t>(qt.length(), 3));
+                if (candCompact.find(prefix3) != std::wstring::npos) {
+                    bool already = false;
+                    for (const auto& m : matchedList) {
+                        if (m == qt || m == prefix3) { already = true; break; }
+                    }
+                    if (!already) {
+                        out.score += 120;
+                        matchedTokens++;
+                        matchedList.push_back(qt);
+                    }
+                }
+            }
+        }
+    }
+
+    if (matchedTokens >= static_cast<int>(qTokens.size()) && !qTokens.empty()) {
+        out.score += 300;
+        out.isExact = true;
+        out.reason = L"All search terms matched";
+    } else if (matchedTokens > 0) {
+        out.isApproximate = true;
+        std::wstring r = L"Matches: ";
+        for (size_t i = 0; i < matchedList.size(); ++i) {
+            if (i > 0) r += L", ";
+            r += matchedList[i];
+        }
+        out.reason = r;
+    }
+
     return out;
 }
 
@@ -330,6 +484,17 @@ MainWindow::MainWindow(HINSTANCE hInstance)
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe MDL2 Assets");
     }
 
+    fontCode_ = CreateFontW(
+        -13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Cascadia Code");
+    if (!fontCode_) {
+        fontCode_ = CreateFontW(
+            -13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
+    }
+
     darkEditBrush_ = CreateSolidBrush(RGB(41, 41, 41));
 
     // Default tab
@@ -345,6 +510,7 @@ MainWindow::~MainWindow() {
     if (fontIcons_) DeleteObject(fontIcons_);
     if (fontIconsLarge_) DeleteObject(fontIconsLarge_);
     if (fontIconsSmall_) DeleteObject(fontIconsSmall_);
+    if (fontCode_) DeleteObject(fontCode_);
     if (darkEditBrush_) DeleteObject(darkEditBrush_);
 }
 
@@ -984,6 +1150,56 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
         UpdateWindow(hwnd_);
         return 0;
 
+    case WM_USER + 111: // Set search query (wParam: 0 = clear, 1 = Batman: Arkham Knight, 2 = Arkham, 3 = BATMANARK, 4 = Dark Knight, 5 = knight, 6 = Batman Arkham Trilogy)
+        if (wParam == 0) {
+            searchIsPlaceholder_ = true;
+            std::wstring ph = isHomeView_ ? L"Search Home" : (L"Search " + (currentPath_.filename().empty() ? currentPath_.wstring() : currentPath_.filename().wstring()));
+            SetWindowTextW(editSearch_, ph.c_str());
+            onSearchChanged();
+        } else {
+            searchIsPlaceholder_ = false;
+            const wchar_t* q = L"Batman: Arkham Knight";
+            if (wParam == 2) q = L"Arkham";
+            else if (wParam == 3) q = L"BATMANARK";
+            else if (wParam == 4) q = L"Dark Knight";
+            else if (wParam == 5) q = L"knight";
+            else if (wParam == 6) q = L"Batman Arkham Trilogy";
+            SetWindowTextW(editSearch_, q);
+            onSearchChanged();
+        }
+        InvalidateRect(hwnd_, nullptr, FALSE);
+        UpdateWindow(hwnd_);
+        return 0;
+
+    case WM_COPYDATA: {
+        auto* pcds = reinterpret_cast<PCOPYDATASTRUCT>(lParam);
+        if (pcds && pcds->lpData) {
+            if (pcds->dwData == 1) { // Search query
+                const wchar_t* text = reinterpret_cast<const wchar_t*>(pcds->lpData);
+                if (text && wcslen(text) > 0) {
+                    searchIsPlaceholder_ = false;
+                    SetWindowTextW(editSearch_, text);
+                    onSearchChanged();
+                } else {
+                    searchIsPlaceholder_ = true;
+                    std::wstring ph = isHomeView_ ? L"Search Home" : (L"Search " + (currentPath_.filename().empty() ? currentPath_.wstring() : currentPath_.filename().wstring()));
+                    SetWindowTextW(editSearch_, ph.c_str());
+                    onSearchChanged();
+                }
+                InvalidateRect(hwnd_, nullptr, FALSE);
+                UpdateWindow(hwnd_);
+                return TRUE;
+            } else if (pcds->dwData == 2) { // Navigate to path
+                const wchar_t* path = reinterpret_cast<const wchar_t*>(pcds->lpData);
+                if (path && wcslen(path) > 0) {
+                    navigateTo(path);
+                    return TRUE;
+                }
+            }
+        }
+        return FALSE;
+    }
+
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd_, &ps);
@@ -1165,7 +1381,7 @@ void MainWindow::onMouseMove(int x, int y) {
     }
 
     // 3. Quick Cards Hover (Home View)
-    if (isHomeView_ && x >= sidebarWidth_) {
+    if (isHomeView_ && !isSearching_ && x >= sidebarWidth_) {
         for (size_t i = 0; i < quickCards_.size(); ++i) {
             if (PtInRect(&quickCards_[i].rect, POINT{x, y})) {
                 hoverCard_ = static_cast<int>(i);
@@ -1175,7 +1391,7 @@ void MainWindow::onMouseMove(int x, int y) {
     }
 
     // 4. File Row / Grid Card Hover
-    if (!isHomeView_ && (viewMode_ == ViewMode::LargeIcons || viewMode_ == ViewMode::MediumIcons || viewMode_ == ViewMode::Tiles)) {
+    if ((!isHomeView_ || isSearching_) && (viewMode_ == ViewMode::LargeIcons || viewMode_ == ViewMode::MediumIcons || viewMode_ == ViewMode::Tiles)) {
         int cardW = (viewMode_ == ViewMode::Tiles) ? 300 : (viewMode_ == ViewMode::LargeIcons ? 164 : 124);
         int cardH = (viewMode_ == ViewMode::Tiles) ? 68 : (viewMode_ == ViewMode::LargeIcons ? 180 : 140);
         int gapX = 14;
@@ -1383,13 +1599,21 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
                     int targetIdx = (hoverRow_ >= 0 && hoverRow_ < static_cast<int>(filteredIndices_.size())) ? hoverRow_ : selectedRow_;
                     if (targetIdx >= 0 && targetIdx < static_cast<int>(filteredIndices_.size())) {
                         const auto& item = allItems_[filteredIndices_[targetIdx]];
-                        // Open File button
-                        if (x >= paneX + 16 && x < paneX + 185) {
+                        // 1. Open File button
+                        if (x >= paneX + 16 && x < paneX + 138) {
                             openItem(item);
                             return;
                         }
-                        // Copy Path button
-                        if (x >= paneX + 195 && x < clientRc.right - 16) {
+                        // 2. Show in Folder button
+                        if (x >= paneX + 144 && x < paneX + 276) {
+                            std::filesystem::path fullP = !item.fullPath.empty()
+                                ? std::filesystem::path(item.fullPath)
+                                : (isHomeView_ ? std::filesystem::path(item.location) / item.name : currentPath_ / item.name);
+                            showInFolder(fullP.wstring());
+                            return;
+                        }
+                        // 3. Copy Path button
+                        if (x >= paneX + 282 && x < clientRc.right - 16) {
                             std::filesystem::path fullP = !item.fullPath.empty()
                                 ? std::filesystem::path(item.fullPath)
                                 : (isHomeView_ ? std::filesystem::path(item.location) / item.name : currentPath_ / item.name);
@@ -1434,7 +1658,7 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
     }
 
     // 8. Home View: Quick Cards & Section Tabs Clicks
-    if (isHomeView_ && x >= sidebarWidth_) {
+    if (isHomeView_ && !isSearching_ && x >= sidebarWidth_) {
         // Quick Cards
         for (const auto& card : quickCards_) {
             if (PtInRect(&card.rect, POINT{x, y})) {
@@ -1466,7 +1690,7 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
     }
 
     // 9. File List / Grid Cards Click & Double-Click (File Execution)
-    if (!isHomeView_ && (viewMode_ == ViewMode::LargeIcons || viewMode_ == ViewMode::MediumIcons || viewMode_ == ViewMode::Tiles)) {
+    if ((!isHomeView_ || isSearching_) && (viewMode_ == ViewMode::LargeIcons || viewMode_ == ViewMode::MediumIcons || viewMode_ == ViewMode::Tiles)) {
         int cardW = (viewMode_ == ViewMode::Tiles) ? 300 : (viewMode_ == ViewMode::LargeIcons ? 164 : 124);
         int cardH = (viewMode_ == ViewMode::Tiles) ? 68 : (viewMode_ == ViewMode::LargeIcons ? 180 : 140);
         int gapX = 14;
@@ -1674,7 +1898,25 @@ void MainWindow::onKeyDown(WPARAM key) {
 }
 
 void MainWindow::onSearchChanged() {
-    filterAndSortItems();
+    wchar_t searchBuf[256]{};
+    if (!searchIsPlaceholder_) {
+        GetWindowTextW(editSearch_, searchBuf, 256);
+    }
+    std::wstring query = searchBuf;
+    while (!query.empty() && iswspace(query.front())) query.erase(query.begin());
+    while (!query.empty() && iswspace(query.back())) query.pop_back();
+
+    if (query.empty()) {
+        isSearching_ = false;
+        currentSearchQuery_.clear();
+        hasExactSearchMatches_ = false;
+        fuzzySuggestion_.clear();
+        allItems_ = folderItems_;
+        filterAndSortItems();
+    } else {
+        executeDeepSearch(query);
+    }
+
     selectedRow_ = filteredIndices_.empty() ? -1 : 0;
     scrollOffset_ = 0;
     updateScrollInfo();
@@ -1717,6 +1959,7 @@ void MainWindow::navigateTo(const std::filesystem::path& path) {
             FileItemDisplay item;
             item.name = entry.path().filename().wstring();
             item.fullPath = entry.path().wstring();
+            item.location = entry.path().parent_path().wstring();
             item.isDirectory = entry.is_directory(ec);
 
             // Hidden items filter
@@ -1745,11 +1988,17 @@ void MainWindow::navigateTo(const std::filesystem::path& path) {
         }
     } catch (...) {}
 
-    filterAndSortItems();
-    selectedRow_ = filteredIndices_.empty() ? -1 : 0;
-    scrollOffset_ = 0;
-    updateScrollInfo();
-    InvalidateRect(hwnd_, nullptr, FALSE);
+    folderItems_ = allItems_;
+
+    if (isSearching_) {
+        executeDeepSearch(currentSearchQuery_);
+    } else {
+        filterAndSortItems();
+        selectedRow_ = filteredIndices_.empty() ? -1 : 0;
+        scrollOffset_ = 0;
+        updateScrollInfo();
+        InvalidateRect(hwnd_, nullptr, FALSE);
+    }
 }
 
 void MainWindow::navigateToHome() {
@@ -1809,11 +2058,239 @@ void MainWindow::navigateToHome() {
         } catch (...) {}
     }
 
+    folderItems_ = allItems_;
+
+    if (isSearching_) {
+        executeDeepSearch(currentSearchQuery_);
+    } else {
+        filterAndSortItems();
+        selectedRow_ = filteredIndices_.empty() ? -1 : 0;
+        scrollOffset_ = 0;
+        updateScrollInfo();
+        InvalidateRect(hwnd_, nullptr, FALSE);
+    }
+}
+
+void MainWindow::executeDeepSearch(const std::wstring& rawQuery) {
+    allItems_.clear();
+    filteredIndices_.clear();
+    hasExactSearchMatches_ = false;
+    fuzzySuggestion_.clear();
+
+    if (rawQuery.empty()) {
+        isSearching_ = false;
+        currentSearchQuery_.clear();
+        allItems_ = folderItems_;
+        filterAndSortItems();
+        return;
+    }
+
+    isSearching_ = true;
+    currentSearchQuery_ = rawQuery;
+
+    std::vector<std::filesystem::path> roots;
+    if (!isHomeView_ && !currentPath_.empty() && std::filesystem::exists(currentPath_)) {
+        roots.push_back(currentPath_);
+    } else {
+        // Home view: search user profile directories and workspace
+        std::vector<std::wstring> homeDirs = {
+            pathDesktop_, pathDownloads_, pathDocuments_,
+            pathPictures_, pathVideos_, pathMusic_, L"C:\\os fileX"
+        };
+        for (const auto& d : homeDirs) {
+            if (!d.empty() && std::filesystem::exists(d)) {
+                roots.push_back(d);
+            }
+        }
+    }
+
+    struct CandidateScore {
+        FileItemDisplay item;
+        int score{0};
+        bool isExact{false};
+        bool isApprox{false};
+        std::wstring reason;
+    };
+
+    std::vector<CandidateScore> exactList;
+    std::vector<CandidateScore> approxList;
+    std::unordered_set<std::wstring> matchedTokenSet;
+
+    auto qTokens = tokenizeQuery(rawQuery);
+    std::wstring qLower = toLower(rawQuery);
+    std::wstring qCompact;
+    for (const auto& t : qTokens) qCompact += t;
+
+    int totalFilesExamined = 0;
+    const int maxExamine = 15000;
+    const size_t maxResults = 500;
+
+    for (const auto& root : roots) {
+        if (totalFilesExamined >= maxExamine) break;
+        std::error_code ec;
+
+        try {
+            auto it = std::filesystem::recursive_directory_iterator(
+                root,
+                std::filesystem::directory_options::skip_permission_denied,
+                ec);
+            auto endIt = std::filesystem::recursive_directory_iterator();
+
+            for (; it != endIt; it.increment(ec)) {
+                if (ec) {
+                    ec.clear();
+                    continue;
+                }
+                if (++totalFilesExamined >= maxExamine) break;
+
+                const auto& entry = *it;
+                std::wstring name = entry.path().filename().wstring();
+
+                if (name.empty()) continue;
+                if (!showHiddenItems_ && (name[0] == L'.' || (GetFileAttributesW(entry.path().c_str()) & FILE_ATTRIBUTE_HIDDEN))) {
+                    if (entry.is_directory(ec)) {
+                        it.disable_recursion_pending();
+                    }
+                    continue;
+                }
+
+                // Skip scanning deep junk folders
+                if (entry.is_directory(ec)) {
+                    std::wstring lowerDir = toLower(name);
+                    if (lowerDir == L"node_modules" || lowerDir == L".git" || lowerDir == L".vs" ||
+                        lowerDir == L"$recycle.bin" || lowerDir == L"system volume information" ||
+                        lowerDir == L"appdata" || lowerDir == L"build" || lowerDir == L"bin" || lowerDir == L"obj") {
+                        it.disable_recursion_pending();
+                        continue;
+                    }
+                }
+
+                auto matchRes = scoreCandidate(name, rawQuery, qTokens, qLower, qCompact);
+                if (matchRes.score <= 0) continue;
+
+                FileItemDisplay item;
+                item.name = name;
+                item.fullPath = entry.path().wstring();
+                item.location = entry.path().parent_path().wstring();
+                item.isDirectory = entry.is_directory(ec);
+                item.matchScore = matchRes.score;
+                item.isApproximateMatch = matchRes.isApproximate;
+                item.matchReason = matchRes.reason;
+
+                if (!item.isDirectory) {
+                    item.extension = entry.path().extension().wstring();
+                    if (!item.extension.empty() && item.extension[0] == L'.') {
+                        item.extension = item.extension.substr(1);
+                    }
+                    item.size = entry.file_size(ec);
+                }
+
+                WIN32_FILE_ATTRIBUTE_DATA fad{};
+                if (GetFileAttributesExW(entry.path().c_str(), GetFileExInfoStandard, &fad)) {
+                    ULARGE_INTEGER uli;
+                    uli.LowPart = fad.ftLastWriteTime.dwLowDateTime;
+                    uli.HighPart = fad.ftLastWriteTime.dwHighDateTime;
+                    item.mtime = uli.QuadPart;
+                    item.attributes = fad.dwFileAttributes;
+                }
+
+                CandidateScore cs;
+                cs.item = std::move(item);
+                cs.score = matchRes.score;
+                cs.isExact = matchRes.isExact;
+                cs.isApprox = matchRes.isApproximate;
+                cs.reason = matchRes.reason;
+
+                if (cs.isExact) {
+                    exactList.push_back(std::move(cs));
+                } else if (cs.isApprox) {
+                    approxList.push_back(std::move(cs));
+                    for (const auto& qt : qTokens) {
+                        if (toLower(name).find(qt) != std::wstring::npos) {
+                            matchedTokenSet.insert(qt);
+                        }
+                    }
+                }
+
+                if (exactList.size() + approxList.size() >= maxResults) break;
+            }
+        } catch (...) {}
+    }
+
+    std::sort(exactList.begin(), exactList.end(), [](const CandidateScore& a, const CandidateScore& b) {
+        if (a.score != b.score) return a.score > b.score;
+        return a.item.mtime > b.item.mtime;
+    });
+
+    std::sort(approxList.begin(), approxList.end(), [](const CandidateScore& a, const CandidateScore& b) {
+        if (a.score != b.score) return a.score > b.score;
+        return a.item.mtime > b.item.mtime;
+    });
+
+    hasExactSearchMatches_ = !exactList.empty();
+
+    for (auto& cs : exactList) {
+        allItems_.push_back(std::move(cs.item));
+    }
+    for (auto& cs : approxList) {
+        allItems_.push_back(std::move(cs.item));
+    }
+
+    if (!matchedTokenSet.empty()) {
+        std::wstring sugg;
+        for (const auto& s : matchedTokenSet) {
+            if (!sugg.empty()) sugg += L", ";
+            sugg += s;
+        }
+        fuzzySuggestion_ = sugg;
+    } else if (!approxList.empty()) {
+        fuzzySuggestion_ = approxList[0].item.name;
+    }
+
     filterAndSortItems();
     selectedRow_ = filteredIndices_.empty() ? -1 : 0;
     scrollOffset_ = 0;
     updateScrollInfo();
     InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void MainWindow::showInFolder(const std::wstring& filePath) {
+    if (filePath.empty()) return;
+    std::filesystem::path p(filePath);
+    std::error_code ec;
+    if (!std::filesystem::exists(p, ec)) return;
+
+    if (isSearching_) {
+        isSearching_ = false;
+        currentSearchQuery_.clear();
+        hasExactSearchMatches_ = false;
+        fuzzySuggestion_.clear();
+        searchIsPlaceholder_ = true;
+    }
+
+    if (std::filesystem::is_directory(p, ec)) {
+        navigateTo(p);
+        return;
+    }
+
+    std::filesystem::path parent = p.parent_path();
+    navigateTo(parent);
+
+    std::wstring ph = L"Search " + (parent.filename().empty() ? parent.wstring() : parent.filename().wstring());
+    SetWindowTextW(editSearch_, ph.c_str());
+
+    std::wstring targetName = p.filename().wstring();
+    for (size_t i = 0; i < filteredIndices_.size(); ++i) {
+        if (allItems_[filteredIndices_[i]].name == targetName) {
+            selectedRow_ = static_cast<int>(i);
+            if (selectedRow_ < scrollOffset_) {
+                scrollOffset_ = selectedRow_;
+            }
+            updateScrollInfo();
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            break;
+        }
+    }
 }
 
 void MainWindow::navigateUp() {
@@ -1871,8 +2348,8 @@ void MainWindow::filterAndSortItems() {
     for (size_t i = 0; i < allItems_.size(); ++i) {
         const auto& item = allItems_[i];
 
-        // 1. Search Query Filter
-        if (!query.empty()) {
+        // 1. Search Query Filter (only when not deep searching, since executeDeepSearch already scored & filtered)
+        if (!isSearching_ && !query.empty()) {
             std::wstring lowerName = toLower(item.name);
             if (lowerName.find(query) == std::wstring::npos) {
                 continue;
@@ -1968,6 +2445,13 @@ void MainWindow::filterAndSortItems() {
 
         if (a.isDirectory != b.isDirectory) {
             return a.isDirectory > b.isDirectory; // Folders always first
+        }
+
+        // When deep searching and default sorting by Name: preserve relevance score ranking!
+        if (isSearching_ && sortCol_ == SortColumn::Name) {
+            if (a.matchScore != b.matchScore) {
+                return sortAscending_ ? (a.matchScore > b.matchScore) : (a.matchScore < b.matchScore);
+            }
         }
 
         int cmp = 0;
@@ -2299,7 +2783,7 @@ void MainWindow::showMoreMenu(int x, int y) {
 }
 
 int MainWindow::getListTop(int contentTop) const {
-    if (isHomeView_) {
+    if (isHomeView_ && !isSearching_) {
         int cols = 4;
         int numRows = (static_cast<int>(quickCards_.size()) + cols - 1) / cols;
         int cardH = 68;
@@ -2320,7 +2804,7 @@ void MainWindow::updateScrollInfo() {
     int totalUnits = static_cast<int>(filteredIndices_.size());
     int pageSize = std::max(1, surfaceHeight / rowHeight_);
 
-    if (!isHomeView_ && (viewMode_ == ViewMode::LargeIcons || viewMode_ == ViewMode::MediumIcons || viewMode_ == ViewMode::Tiles)) {
+    if ((!isHomeView_ || isSearching_) && (viewMode_ == ViewMode::LargeIcons || viewMode_ == ViewMode::MediumIcons || viewMode_ == ViewMode::Tiles)) {
         int cardW = (viewMode_ == ViewMode::Tiles) ? 300 : (viewMode_ == ViewMode::LargeIcons ? 164 : 124);
         int gapX = 14;
         int rightMargin = (showDetailsPane_ ? detailsPaneWidth_ : (showPreviewPane_ ? previewPaneWidth_ : 0));
@@ -3291,8 +3775,50 @@ void MainWindow::paintDirectoryView(HDC hdc, int width, int height) {
 
     SetBkMode(hdc, TRANSPARENT);
 
-    // 1. Instant 1-Click Quick Filter Bar
-    paintFilterPills(hdc, width, contentTop);
+    // 1. Instant 1-Click Quick Filter Bar / Search Results Header
+    if (isSearching_) {
+        RECT searchHdrRc{surfaceLeft + 8, contentTop + 4, effWidth - 8, contentTop + 36};
+        drawRoundedRect(hdc, searchHdrRc, 8, RGB(20, 26, 40), RGB(52, 70, 108));
+
+        // Radiant search icon
+        SelectObject(hdc, fontIconsSmall_);
+        SetTextColor(hdc, RGB(96, 205, 255));
+        RECT sIconRc{searchHdrRc.left + 10, searchHdrRc.top, searchHdrRc.left + 30, searchHdrRc.bottom};
+        DrawTextW(hdc, L"\uE721", 1, &sIconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        SelectObject(hdc, fontBold_);
+        SetTextColor(hdc, RGB(255, 255, 255));
+        std::wstring sLoc = isHomeView_ ? L"Home" : currentPath_.filename().wstring();
+        if (sLoc.empty()) sLoc = currentPath_.wstring();
+        std::wstring sText = L"Search in \"" + sLoc + L"\" for \"" + currentSearchQuery_ + L"\"";
+
+        bool showBanner = (!hasExactSearchMatches_ && !fuzzySuggestion_.empty());
+        int bannerW = showBanner ? 360 : 0;
+        int maxTextW = effWidth - 160 - (showBanner ? (bannerW + 16) : 0) - (searchHdrRc.left + 34);
+        if (maxTextW < 120) maxTextW = 120;
+        RECT sTextRc{searchHdrRc.left + 34, searchHdrRc.top, searchHdrRc.left + 34 + maxTextW, searchHdrRc.bottom};
+        DrawTextW(hdc, sText.c_str(), -1, &sTextRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+
+        // Result count pill
+        RECT countPill{effWidth - 148, searchHdrRc.top + 4, effWidth - 16, searchHdrRc.bottom - 4};
+        drawRoundedRect(hdc, countPill, 6, RGB(32, 42, 64), RGB(64, 86, 128));
+        SelectObject(hdc, fontSmall_);
+        SetTextColor(hdc, RGB(120, 205, 255));
+        wchar_t countBuf[64];
+        swprintf_s(countBuf, L"%zu results found", filteredIndices_.size());
+        DrawTextW(hdc, countBuf, -1, &countPill, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        // Approximate recommendation banner
+        if (showBanner) {
+            RECT bannerRc{effWidth - 156 - bannerW, searchHdrRc.top + 4, effWidth - 156, searchHdrRc.bottom - 4};
+            drawRoundedRect(hdc, bannerRc, 6, RGB(46, 36, 18), RGB(130, 95, 36));
+            SetTextColor(hdc, RGB(255, 205, 90));
+            std::wstring bannerText = L"✦ Approximate (Did you mean: " + fuzzySuggestion_ + L"?)";
+            DrawTextW(hdc, bannerText.c_str(), -1, &bannerRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        }
+    } else {
+        paintFilterPills(hdc, width, contentTop);
+    }
 
     // 2. Interactive Column Headers (with Sort Arrows)
     int tableHeaderTop = contentTop + filterBarHeight_;
@@ -3305,9 +3831,11 @@ void MainWindow::paintDirectoryView(HDC hdc, int width, int height) {
     SetTextColor(hdc, RGB(140, 140, 140));
 
     int colStart = surfaceLeft + 36 + (showCheckBoxes_ ? 28 : 0);
-    RECT colNameRc{colStart, tableHeaderTop, colStart + colNameWidth_, tableHeaderTop + headerHeight_};
-    RECT colDateRc{colNameRc.right, tableHeaderTop, colNameRc.right + colDateWidth_, tableHeaderTop + headerHeight_};
-    RECT colTypeRc{colDateRc.right, tableHeaderTop, colDateRc.right + colTypeWidth_, tableHeaderTop + headerHeight_};
+    int curNameW = isSearching_ ? 280 : colNameWidth_;
+    RECT colNameRc{colStart, tableHeaderTop, colStart + curNameW, tableHeaderTop + headerHeight_};
+    RECT colLocRc{colNameRc.right, tableHeaderTop, colNameRc.right + (isSearching_ ? 200 : 0), tableHeaderTop + headerHeight_};
+    RECT colDateRc{colLocRc.right, tableHeaderTop, colLocRc.right + (isSearching_ ? 160 : colDateWidth_), tableHeaderTop + headerHeight_};
+    RECT colTypeRc{colDateRc.right, tableHeaderTop, colDateRc.right + (isSearching_ ? 120 : colTypeWidth_), tableHeaderTop + headerHeight_};
     RECT colSizeRc{colTypeRc.right, tableHeaderTop, colTypeRc.right + colSizeWidth_, tableHeaderTop + headerHeight_};
 
     std::wstring nameHdr = L"NAME" + std::wstring(sortCol_ == SortColumn::Name ? (sortAscending_ ? L" ▲" : L" ▼") : L"");
@@ -3316,6 +3844,9 @@ void MainWindow::paintDirectoryView(HDC hdc, int width, int height) {
     std::wstring sizeHdr = L"SIZE" + std::wstring(sortCol_ == SortColumn::Size ? (sortAscending_ ? L" ▲" : L" ▼") : L"");
 
     DrawTextW(hdc, nameHdr.c_str(), -1, &colNameRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    if (isSearching_) {
+        DrawTextW(hdc, L"FOLDER LOCATION", 15, &colLocRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    }
     DrawTextW(hdc, dateHdr.c_str(), -1, &colDateRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     DrawTextW(hdc, typeHdr.c_str(), -1, &colTypeRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     DrawTextW(hdc, sizeHdr.c_str(), -1, &colSizeRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
@@ -3382,20 +3913,42 @@ void MainWindow::paintDirectoryView(HDC hdc, int width, int height) {
 
         SelectObject(hdc, fontRegular_);
         SetTextColor(hdc, RGB(255, 255, 255));
-        RECT nameCell{colStart, rowRc.top, colStart + colNameWidth_ - 10, rowRc.bottom};
+        int textMaxW = curNameW - (item.isApproximateMatch ? 86 : 10);
+        RECT nameCell{colStart, rowRc.top, colStart + textMaxW, rowRc.bottom};
         DrawTextW(hdc, displayName.c_str(), -1, &nameCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+
+        // Approximate recommendation badge
+        if (item.isApproximateMatch) {
+            RECT appRc{colStart + textMaxW + 4, rowRc.top + 10, colStart + curNameW - 6, rowRc.bottom - 10};
+            drawRoundedRect(hdc, appRc, 4, RGB(46, 36, 18), RGB(120, 95, 45));
+            SelectObject(hdc, fontSmall_);
+            SetTextColor(hdc, RGB(255, 195, 75));
+            DrawTextW(hdc, L"Approx", 6, &appRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+
+        // Location Column (in search mode)
+        if (isSearching_) {
+            SelectObject(hdc, fontSmall_);
+            SetTextColor(hdc, RGB(140, 180, 220));
+            RECT locCell{colLocRc.left, rowRc.top, colLocRc.right - 10, rowRc.bottom};
+            std::wstring locDisplay = item.location;
+            if (locDisplay.length() > 28) {
+                locDisplay = L"..." + locDisplay.substr(locDisplay.length() - 25);
+            }
+            DrawTextW(hdc, locDisplay.c_str(), -1, &locCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        }
 
         SelectObject(hdc, fontSmall_);
         SetTextColor(hdc, RGB(160, 160, 160));
-        RECT dateCell{colNameRc.right, rowRc.top, colNameRc.right + colDateWidth_, rowRc.bottom};
+        RECT dateCell{colDateRc.left, rowRc.top, colDateRc.right, rowRc.bottom};
         std::wstring dt = formatTime(item.mtime);
         DrawTextW(hdc, dt.c_str(), -1, &dateCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
-        RECT typeCell{colDateRc.right, rowRc.top, colDateRc.right + colTypeWidth_, rowRc.bottom};
+        RECT typeCell{colTypeRc.left, rowRc.top, colTypeRc.right, rowRc.bottom};
         std::wstring typeStr = item.isDirectory ? L"File folder" : (item.extension.empty() ? L"File" : item.extension + L" File");
         DrawTextW(hdc, typeStr.c_str(), -1, &typeCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
-        RECT sizeCell{colTypeRc.right, rowRc.top, colTypeRc.right + colSizeWidth_, rowRc.bottom};
+        RECT sizeCell{colSizeRc.left, rowRc.top, colSizeRc.right, rowRc.bottom};
         std::wstring sz = item.isDirectory ? L"" : formatSize(item.size);
         DrawTextW(hdc, sz.c_str(), -1, &sizeCell, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     }
@@ -3494,30 +4047,53 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
     int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
     RECT paneRc{paneX, contentTop, width, height - statusBarHeight_};
 
-    // Apple Frosted Obsidian Glass background
-    HBRUSH bgBrush = CreateSolidBrush(RGB(22, 24, 30));
+    // 1. Apple Frosted Obsidian Liquid Glass Background
+    HBRUSH bgBrush = CreateSolidBrush(RGB(16, 18, 24));
     FillRect(hdc, &paneRc, bgBrush);
     DeleteObject(bgBrush);
 
-    // 1px Luminous left edge
-    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(48, 52, 66));
-    SelectObject(hdc, borderPen);
+    // 2. Liquid Glass Top Specular Gradient (Refraction Shimmer)
+    for (int y = 0; y < 140; ++y) {
+        int r = 16 + (32 - 16) * (140 - y) / 140;
+        int g = 18 + (38 - 18) * (140 - y) / 140;
+        int b = 24 + (52 - 24) * (140 - y) / 140;
+        RECT gradLine{paneX, contentTop + y, width, contentTop + y + 1};
+        HBRUSH gbr = CreateSolidBrush(RGB(r, g, b));
+        FillRect(hdc, &gradLine, gbr);
+        DeleteObject(gbr);
+    }
+
+    // 3. 1px Luminous specular edge line on the left
+    HPEN topPen = CreatePen(PS_SOLID, 1, RGB(78, 92, 128));
+    SelectObject(hdc, topPen);
     MoveToEx(hdc, paneX, contentTop, nullptr);
+    LineTo(hdc, paneX, contentTop + 140);
+    DeleteObject(topPen);
+
+    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(42, 48, 64));
+    SelectObject(hdc, borderPen);
+    MoveToEx(hdc, paneX, contentTop + 140, nullptr);
     LineTo(hdc, paneX, height - statusBarHeight_);
     DeleteObject(borderPen);
 
     SetBkMode(hdc, TRANSPARENT);
 
-    // Header Title
-    RECT titleRc{paneX + 18, contentTop + 14, paneX + 130, contentTop + 40};
+    // 4. Header Bar
+    RECT iconRc{paneX + 18, contentTop + 14, paneX + 38, contentTop + 38};
+    SelectObject(hdc, fontIconsSmall_);
+    SetTextColor(hdc, RGB(96, 205, 255));
+    DrawTextW(hdc, L"\uE8A1", 1, &iconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    RECT titleRc{paneX + 42, contentTop + 14, paneX + 160, contentTop + 38};
     SelectObject(hdc, fontTitle_);
     SetTextColor(hdc, RGB(255, 255, 255));
-    DrawTextW(hdc, L"Preview", 7, &titleRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    DrawTextW(hdc, L"Quick Look", 10, &titleRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
-    // Close 'X' Button
+    // Close 'X' Button with subtle circular glass capsule
     RECT closeRc{width - 34, contentTop + 14, width - 12, contentTop + 36};
+    drawRoundedRect(hdc, closeRc, 11, RGB(28, 32, 44), RGB(50, 58, 76));
     SelectObject(hdc, fontRegular_);
-    SetTextColor(hdc, RGB(160, 160, 160));
+    SetTextColor(hdc, RGB(180, 185, 200));
     DrawTextW(hdc, L"×", 1, &closeRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
     // Determine target item: active hover item or selected item
@@ -3526,21 +4102,24 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
         : selectedRow_;
 
     if (targetIdx < 0 || targetIdx >= static_cast<int>(filteredIndices_.size())) {
-        // Apple Empty State
-        RECT iconRc{paneX + 20, contentTop + 110, width - 20, contentTop + 160};
+        // Liquid Glass Empty State
+        RECT cardRc{paneX + 24, contentTop + 120, width - 24, contentTop + 300};
+        drawRoundedRect(hdc, cardRc, 12, RGB(20, 24, 34), RGB(48, 56, 78));
+
+        RECT eIconRc{cardRc.left, cardRc.top + 30, cardRc.right, cardRc.top + 80};
         SelectObject(hdc, fontIconsLarge_);
-        SetTextColor(hdc, RGB(80, 88, 110));
-        DrawTextW(hdc, L"\uE8A1", 1, &iconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        SetTextColor(hdc, RGB(96, 120, 170));
+        DrawTextW(hdc, L"\uE8A1", 1, &eIconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-        RECT msgRc{paneX + 24, contentTop + 175, width - 24, contentTop + 205};
+        RECT msgRc{cardRc.left + 16, cardRc.top + 95, cardRc.right - 16, cardRc.top + 125};
         SelectObject(hdc, fontBold_);
-        SetTextColor(hdc, RGB(215, 220, 235));
-        DrawTextW(hdc, L"Quick Look Preview", -1, &msgRc, DT_CENTER | DT_SINGLELINE | DT_NOPREFIX);
+        SetTextColor(hdc, RGB(225, 230, 245));
+        DrawTextW(hdc, L"Quick Look Inspector", -1, &msgRc, DT_CENTER | DT_SINGLELINE | DT_NOPREFIX);
 
-        RECT subRc{paneX + 24, contentTop + 210, width - 24, contentTop + 260};
+        RECT subRc{cardRc.left + 16, cardRc.top + 128, cardRc.right - 16, cardRc.top + 175};
         SelectObject(hdc, fontSmall_);
-        SetTextColor(hdc, RGB(140, 145, 160));
-        DrawTextW(hdc, L"Hover over or select any photo, document, or media file to inspect its full contents.", -1, &subRc, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
+        SetTextColor(hdc, RGB(145, 155, 175));
+        DrawTextW(hdc, L"Select or hover over any photo, document, or folder to inspect contents in full Liquid Glass fidelity.", -1, &subRc, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
         return;
     }
 
@@ -3555,35 +4134,48 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
     bool isAudio = (!item.isDirectory && (ext == L"mp3" || ext == L"wav" || ext == L"flac" || ext == L"aac" || ext == L"m4a"));
     bool isCode = (!item.isDirectory && (ext == L"txt" || ext == L"cpp" || ext == L"h" || ext == L"c" || ext == L"hpp" || ext == L"json" || ext == L"md" || ext == L"py" || ext == L"cmake" || ext == L"xml" || ext == L"log" || ext == L"csv" || ext == L"ini" || ext == L"bat" || ext == L"ps1" || ext == L"sh" || ext == L"yaml" || ext == L"yml" || ext == L"rs" || ext == L"js" || ext == L"ts" || ext == L"html" || ext == L"css"));
 
-    // Category Pill in header
+    // Glowing Category Pill in header
+    COLORREF catPillBg = item.isDirectory ? RGB(48, 38, 18) : (isImage ? RGB(20, 38, 54) : (isVideo ? RGB(42, 26, 56) : (isCode ? RGB(18, 44, 32) : RGB(32, 36, 48))));
+    COLORREF catPillBdr = item.isDirectory ? RGB(120, 90, 36) : (isImage ? RGB(46, 92, 130) : (isVideo ? RGB(100, 60, 140) : (isCode ? RGB(40, 100, 70) : RGB(56, 64, 84))));
+    COLORREF catPillText = item.isDirectory ? RGB(255, 195, 70) : (isImage ? RGB(96, 205, 255) : (isVideo ? RGB(210, 140, 255) : (isCode ? RGB(90, 220, 150) : RGB(190, 200, 220))));
     std::wstring catLabel = item.isDirectory ? L"Folder" : (isImage ? L"Photo" : (isVideo ? L"Video" : (isAudio ? L"Audio" : (isCode ? L"Document" : L"File"))));
-    RECT catPill{paneX + 115, contentTop + 16, paneX + 205, contentTop + 36};
-    drawRoundedRect(hdc, catPill, 10, RGB(34, 38, 52), RGB(60, 68, 92));
+
+    RECT catPill{paneX + 165, contentTop + 14, paneX + 255, contentTop + 36};
+    drawRoundedRect(hdc, catPill, 11, catPillBg, catPillBdr);
     SelectObject(hdc, fontSmall_);
-    SetTextColor(hdc, RGB(120, 195, 255));
+    SetTextColor(hdc, catPillText);
     DrawTextW(hdc, catLabel.c_str(), -1, &catPill, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
-    // File Name Title
-    RECT nameRc{paneX + 18, contentTop + 50, width - 18, contentTop + 85};
+    // Hero File Name Title
+    RECT nameRc{paneX + 18, contentTop + 48, width - 18, contentTop + 80};
     SelectObject(hdc, fontBold_);
     SetTextColor(hdc, RGB(255, 255, 255));
     DrawTextW(hdc, item.name.c_str(), -1, &nameRc, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS | DT_NOPREFIX);
 
-    // Subtext: Location / size
-    RECT subRc{paneX + 18, contentTop + 86, width - 18, contentTop + 104};
+    // Location Breadcrumb Pill
+    std::wstring parentStr = fullPath.has_parent_path() ? fullPath.parent_path().filename().wstring() : L"";
+    if (parentStr.empty()) parentStr = isHomeView_ ? item.location : currentPath_.filename().wstring();
+    std::wstring locText = L"📁 " + parentStr;
+    RECT locPill{paneX + 18, contentTop + 82, paneX + 18 + static_cast<int>(locText.length() * 8 + 20), contentTop + 104};
+    drawRoundedRect(hdc, locPill, 10, RGB(24, 28, 38), RGB(46, 54, 72));
     SelectObject(hdc, fontSmall_);
-    SetTextColor(hdc, RGB(150, 155, 170));
-    std::wstring subInfo = item.isDirectory ? L"Directory" : (formatSize(item.size) + L"  ·  Modified " + formatTime(item.mtime));
-    DrawTextW(hdc, subInfo.c_str(), -1, &subRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+    SetTextColor(hdc, RGB(160, 175, 205));
+    DrawTextW(hdc, locText.c_str(), -1, &locPill, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
-    int curY = contentTop + 114;
+    int curY = contentTop + 112;
 
-    // Content Display
+    // Main Preview Viewport
     if (isImage || isVideo) {
-        // Photo Preview Frame
         int frameH = 220;
         RECT frameRc{paneX + 16, curY, width - 16, curY + frameH};
-        drawRoundedRect(hdc, frameRc, 8, RGB(14, 15, 20), RGB(52, 56, 72));
+        drawRoundedRect(hdc, frameRc, 10, RGB(12, 14, 18), RGB(52, 62, 86));
+
+        // Specular top rim highlight line
+        HPEN rimPen = CreatePen(PS_SOLID, 1, RGB(75, 88, 124));
+        SelectObject(hdc, rimPen);
+        MoveToEx(hdc, frameRc.left + 8, frameRc.top, nullptr);
+        LineTo(hdc, frameRc.right - 8, frameRc.top);
+        DeleteObject(rimPen);
 
         HBITMAP hBmp = getThumbnailBitmap(fullPath.wstring(), 512);
         if (hBmp) {
@@ -3599,103 +4191,280 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
 
         curY += frameH + 12;
 
-        // Metadata Pills
+        // Overlay Dimension & Details Pill Bar
         uint32_t imgW = 0, imgH = 0;
         bool hasDim = getImageDimensions(fullPath.wstring(), imgW, imgH);
         if (hasDim) {
             wchar_t dimBuf[64];
             swprintf_s(dimBuf, L"%u × %u px", imgW, imgH);
-            RECT dimPill{paneX + 16, curY, paneX + 130, curY + 26};
-            drawRoundedRect(hdc, dimPill, 6, RGB(30, 34, 46), RGB(54, 60, 80));
+            RECT dimPill{paneX + 16, curY, paneX + 140, curY + 28};
+            drawRoundedRect(hdc, dimPill, 6, RGB(26, 32, 46), RGB(56, 68, 96));
             SelectObject(hdc, fontSmall_);
-            SetTextColor(hdc, RGB(220, 225, 240));
+            SetTextColor(hdc, RGB(225, 230, 245));
             DrawTextW(hdc, dimBuf, -1, &dimPill, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
 
         std::wstring extUpper = toUpper(ext) + (isImage ? L" Image" : L" Video");
-        RECT extPill{hasDim ? paneX + 136 : paneX + 16, curY, hasDim ? paneX + 250 : paneX + 140, curY + 26};
-        drawRoundedRect(hdc, extPill, 6, RGB(30, 34, 46), RGB(54, 60, 80));
+        RECT extPill{hasDim ? paneX + 146 : paneX + 16, curY, hasDim ? paneX + 270 : paneX + 150, curY + 28};
+        drawRoundedRect(hdc, extPill, 6, RGB(26, 32, 46), RGB(56, 68, 96));
         SelectObject(hdc, fontSmall_);
-        SetTextColor(hdc, RGB(120, 195, 255));
+        SetTextColor(hdc, RGB(96, 205, 255));
         DrawTextW(hdc, extUpper.c_str(), -1, &extPill, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-        RECT szPill{hasDim ? paneX + 256 : paneX + 146, curY, width - 16, curY + 26};
-        drawRoundedRect(hdc, szPill, 6, RGB(30, 34, 46), RGB(54, 60, 80));
+        RECT szPill{hasDim ? paneX + 276 : paneX + 156, curY, width - 16, curY + 28};
+        drawRoundedRect(hdc, szPill, 6, RGB(26, 32, 46), RGB(56, 68, 96));
         SelectObject(hdc, fontSmall_);
-        SetTextColor(hdc, RGB(200, 205, 220));
+        SetTextColor(hdc, RGB(210, 215, 230));
         std::wstring szStr = formatSize(item.size);
         DrawTextW(hdc, szStr.c_str(), -1, &szPill, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
         curY += 38;
     } else if (isCode) {
-        // Document / Code Viewer
-        int boxBottom = height - statusBarHeight_ - 66;
+        // Liquid Glass Code Inspector
+        int boxBottom = height - statusBarHeight_ - 180;
         RECT codeBox{paneX + 16, curY, width - 16, boxBottom};
-        drawRoundedRect(hdc, codeBox, 8, RGB(14, 15, 20), RGB(46, 50, 64));
+        drawRoundedRect(hdc, codeBox, 10, RGB(12, 14, 18), RGB(48, 56, 78));
+
+        // Specular top rim
+        HPEN rimPen = CreatePen(PS_SOLID, 1, RGB(70, 82, 114));
+        SelectObject(hdc, rimPen);
+        MoveToEx(hdc, codeBox.left + 8, codeBox.top, nullptr);
+        LineTo(hdc, codeBox.right - 8, codeBox.top);
+        DeleteObject(rimPen);
+
+        // Gutter divider
+        int gutterW = 38;
+        RECT gutterRc{codeBox.left, codeBox.top, codeBox.left + gutterW, codeBox.bottom};
+        drawRoundedRect(hdc, gutterRc, 10, RGB(16, 18, 24), RGB(16, 18, 24));
+        HPEN divPen = CreatePen(PS_SOLID, 1, RGB(44, 50, 68));
+        SelectObject(hdc, divPen);
+        MoveToEx(hdc, codeBox.left + gutterW, codeBox.top, nullptr);
+        LineTo(hdc, codeBox.left + gutterW, codeBox.bottom);
+        DeleteObject(divPen);
 
         std::ifstream file(fullPath);
         if (file.is_open()) {
             std::string line;
-            int textY = curY + 10;
+            int textY = curY + 8;
             int lineNum = 1;
-            SelectObject(hdc, fontSmall_);
+            SelectObject(hdc, fontCode_ ? fontCode_ : fontSmall_);
 
-            while (std::getline(file, line) && lineNum <= 28 && textY < boxBottom - 20) {
+            while (std::getline(file, line) && lineNum <= 24 && textY < boxBottom - 20) {
+                // Strip UTF-8 BOM if present on line 1
+                if (lineNum == 1 && line.size() >= 3 &&
+                    static_cast<unsigned char>(line[0]) == 0xEF &&
+                    static_cast<unsigned char>(line[1]) == 0xBB &&
+                    static_cast<unsigned char>(line[2]) == 0xBF) {
+                    line.erase(0, 3);
+                }
+
+                // Line Number in Gutter
                 wchar_t numBuf[16];
                 swprintf_s(numBuf, L"%2d", lineNum);
-                RECT numRc{codeBox.left + 8, textY, codeBox.left + 32, textY + 20};
-                SetTextColor(hdc, RGB(90, 95, 115));
+                RECT numRc{codeBox.left + 4, textY, codeBox.left + gutterW - 6, textY + 18};
+                SetTextColor(hdc, RGB(90, 100, 125));
                 DrawTextW(hdc, numBuf, -1, &numRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
 
-                std::wstring wLine(line.begin(), line.end());
-                RECT lineRc{codeBox.left + 40, textY, codeBox.right - 8, textY + 20};
-                SetTextColor(hdc, RGB(225, 230, 240));
+                // Syntax Highlighted Code Line
+                int wlen = MultiByteToWideChar(CP_UTF8, 0, line.c_str(), -1, nullptr, 0);
+                std::wstring wLine;
+                if (wlen > 1) {
+                    wLine.resize(wlen - 1);
+                    MultiByteToWideChar(CP_UTF8, 0, line.c_str(), -1, &wLine[0], wlen);
+                }
+                RECT lineRc{codeBox.left + gutterW + 8, textY, codeBox.right - 8, textY + 18};
+
+                COLORREF lineCol = RGB(225, 230, 245);
+                std::string trimL = line;
+                while (!trimL.empty() && (trimL.front() == ' ' || trimL.front() == '\t')) trimL.erase(trimL.begin());
+                if (trimL.rfind("//", 0) == 0 || trimL.rfind("/*", 0) == 0 || trimL.rfind("#", 0) == 0) {
+                    lineCol = RGB(130, 140, 165); // Comment / Preprocessor
+                } else if (trimL.find("class ") == 0 || trimL.find("struct ") == 0 || trimL.find("void ") == 0 ||
+                           trimL.find("int ") == 0 || trimL.find("return ") == 0 || trimL.find("if ") == 0 ||
+                           trimL.find("for ") == 0 || trimL.find("while ") == 0 || trimL.find("def ") == 0 ||
+                           trimL.find("import ") == 0 || trimL.find("const ") == 0) {
+                    lineCol = RGB(110, 205, 255); // Keyword highlight
+                }
+
+                SetTextColor(hdc, lineCol);
                 DrawTextW(hdc, wLine.c_str(), -1, &lineRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
-                textY += 20;
+                textY += 18;
                 lineNum++;
             }
         }
-    } else {
-        // Folder / Generic File Card
-        int frameH = 140;
+
+        curY = boxBottom + 10;
+    } else if (item.isDirectory) {
+        // Liquid Glass Folder Inspector Card
+        int frameH = 150;
         RECT frameRc{paneX + 16, curY, width - 16, curY + frameH};
-        drawRoundedRect(hdc, frameRc, 8, RGB(14, 15, 20), RGB(46, 50, 64));
+        drawRoundedRect(hdc, frameRc, 10, RGB(14, 16, 22), RGB(52, 62, 86));
+
+        // Specular top rim
+        HPEN rimPen = CreatePen(PS_SOLID, 1, RGB(75, 88, 124));
+        SelectObject(hdc, rimPen);
+        MoveToEx(hdc, frameRc.left + 8, frameRc.top, nullptr);
+        LineTo(hdc, frameRc.right - 8, frameRc.top);
+        DeleteObject(rimPen);
+
+        // Warm luminous folder icon
+        RECT iconBox{frameRc.left + 16, frameRc.top + 16, frameRc.left + 64, frameRc.top + 64};
+        drawRoundedRect(hdc, iconBox, 10, RGB(38, 30, 16), RGB(100, 75, 30));
+        SelectObject(hdc, fontIconsLarge_);
+        SetTextColor(hdc, RGB(255, 195, 70));
+        DrawTextW(hdc, L"\uE8B7", 1, &iconBox, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        // Folder Title & Count
+        std::error_code ec;
+        size_t fileCount = 0;
+        size_t dirCount = 0;
+        std::vector<std::wstring> childNames;
+        try {
+            for (const auto& entry : std::filesystem::directory_iterator(fullPath, std::filesystem::directory_options::skip_permission_denied, ec)) {
+                if (entry.is_directory(ec)) dirCount++;
+                else fileCount++;
+                if (childNames.size() < 3) {
+                    childNames.push_back(entry.path().filename().wstring());
+                }
+            }
+        } catch (...) {}
+
+        RECT fTitleRc{frameRc.left + 76, frameRc.top + 18, frameRc.right - 12, frameRc.top + 40};
+        SelectObject(hdc, fontBold_);
+        SetTextColor(hdc, RGB(255, 255, 255));
+        DrawTextW(hdc, L"Directory Contents", -1, &fTitleRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+        wchar_t countBuf[128];
+        swprintf_s(countBuf, L"%zu items (%zu files, %zu subfolders)", fileCount + dirCount, fileCount, dirCount);
+        RECT fSubRc{frameRc.left + 76, frameRc.top + 42, frameRc.right - 12, frameRc.top + 62};
+        SelectObject(hdc, fontSmall_);
+        SetTextColor(hdc, RGB(160, 170, 195));
+        DrawTextW(hdc, countBuf, -1, &fSubRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+        // Child Items Preview inside card
+        if (!childNames.empty()) {
+            int childY = frameRc.top + 74;
+            for (size_t ci = 0; ci < childNames.size(); ++ci) {
+                RECT cRc{frameRc.left + 16, childY, frameRc.right - 16, childY + 20};
+                std::wstring cText = L"•  " + childNames[ci];
+                SetTextColor(hdc, RGB(185, 195, 215));
+                DrawTextW(hdc, cText.c_str(), -1, &cRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+                childY += 22;
+            }
+        }
+
+        curY += frameH + 12;
+    } else {
+        // Generic File Card
+        int frameH = 130;
+        RECT frameRc{paneX + 16, curY, width - 16, curY + frameH};
+        drawRoundedRect(hdc, frameRc, 10, RGB(14, 16, 22), RGB(50, 58, 80));
 
         HICON hIcon = getFileIcon(item.name, item.isDirectory, item.extension, true);
         if (hIcon) {
-            DrawIconEx(hdc, frameRc.left + (frameRc.right - frameRc.left - 64) / 2, frameRc.top + 20, hIcon, 64, 64, 0, nullptr, DI_NORMAL);
+            DrawIconEx(hdc, frameRc.left + (frameRc.right - frameRc.left - 64) / 2, frameRc.top + 16, hIcon, 64, 64, 0, nullptr, DI_NORMAL);
             DestroyIcon(hIcon);
         }
 
-        RECT typeRc{frameRc.left + 10, frameRc.top + 95, frameRc.right - 10, frameRc.bottom - 10};
+        RECT typeRc{frameRc.left + 10, frameRc.top + 88, frameRc.right - 10, frameRc.bottom - 8};
         SelectObject(hdc, fontRegular_);
-        SetTextColor(hdc, RGB(210, 215, 230));
-        std::wstring typeDesc = item.isDirectory ? L"File Folder" : (item.extension.empty() ? L"Binary File" : (toUpper(item.extension) + L" Document"));
+        SetTextColor(hdc, RGB(220, 225, 240));
+        std::wstring typeDesc = item.extension.empty() ? L"Binary File" : (toUpper(item.extension) + L" Document");
         DrawTextW(hdc, typeDesc.c_str(), -1, &typeRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        curY += frameH + 12;
     }
 
-    // Apple Quick Action Capsule Buttons at bottom of Preview Pane
+    // Structured Metadata Liquid Glass Card
+    int metaBottom = height - statusBarHeight_ - 62;
+    if (metaBottom - curY >= 80) {
+        RECT metaCard{paneX + 16, curY, width - 16, metaBottom};
+        drawRoundedRect(hdc, metaCard, 8, RGB(18, 22, 30), RGB(44, 52, 72));
+
+        int mY = curY + 8;
+        SelectObject(hdc, fontSmall_);
+
+        // Row 1: Size
+        RECT kSizeRc{metaCard.left + 12, mY, metaCard.left + 80, mY + 18};
+        SetTextColor(hdc, RGB(130, 140, 160));
+        DrawTextW(hdc, L"Size", 4, &kSizeRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+        wchar_t rawSizeBuf[64];
+        if (item.isDirectory) swprintf_s(rawSizeBuf, L"Folder");
+        else swprintf_s(rawSizeBuf, L"%s (%llu bytes)", formatSize(item.size).c_str(), static_cast<unsigned long long>(item.size));
+        RECT vSizeRc{metaCard.left + 85, mY, metaCard.right - 12, mY + 18};
+        SetTextColor(hdc, RGB(220, 225, 240));
+        DrawTextW(hdc, rawSizeBuf, -1, &vSizeRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+        mY += 22;
+
+        // Row 2: Date Modified
+        RECT kModRc{metaCard.left + 12, mY, metaCard.left + 80, mY + 18};
+        SetTextColor(hdc, RGB(130, 140, 160));
+        DrawTextW(hdc, L"Modified", 8, &kModRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+        RECT vModRc{metaCard.left + 85, mY, metaCard.right - 12, mY + 18};
+        SetTextColor(hdc, RGB(220, 225, 240));
+        std::wstring modStr = formatTime(item.mtime);
+        DrawTextW(hdc, modStr.c_str(), -1, &vModRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+        mY += 22;
+
+        // Row 3: Attributes
+        if (mY + 18 < metaBottom) {
+            RECT kAttrRc{metaCard.left + 12, mY, metaCard.left + 80, mY + 18};
+            SetTextColor(hdc, RGB(130, 140, 160));
+            DrawTextW(hdc, L"Attributes", 10, &kAttrRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+            std::wstring attrStr;
+            if (item.attributes & FILE_ATTRIBUTE_READONLY) attrStr += L"Read-only ";
+            if (item.attributes & FILE_ATTRIBUTE_HIDDEN) attrStr += L"Hidden ";
+            if (item.attributes & FILE_ATTRIBUTE_SYSTEM) attrStr += L"System ";
+            if (attrStr.empty()) attrStr = L"Normal / Archive";
+
+            RECT vAttrRc{metaCard.left + 85, mY, metaCard.right - 12, mY + 18};
+            SetTextColor(hdc, RGB(160, 205, 245));
+            DrawTextW(hdc, attrStr.c_str(), -1, &vAttrRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        }
+    }
+
+    // Liquid Glass Action Dock (Bottom)
     int btnY = height - statusBarHeight_ - 52;
-    RECT openBtnRc{paneX + 16, btnY, paneX + 185, btnY + 36};
-    drawRoundedRect(hdc, openBtnRc, 6, RGB(27, 50, 72), RGB(96, 205, 255));
+
+    // 1. Open File Button (Primary radiant cyan glass)
+    RECT openBtnRc{paneX + 16, btnY, paneX + 138, btnY + 36};
+    drawRoundedRect(hdc, openBtnRc, 8, RGB(20, 50, 76), RGB(96, 205, 255));
     SelectObject(hdc, fontIconsSmall_);
     SetTextColor(hdc, RGB(96, 205, 255));
-    RECT oIconRc{openBtnRc.left + 10, btnY, openBtnRc.left + 30, btnY + 36};
+    RECT oIconRc{openBtnRc.left + 8, btnY, openBtnRc.left + 26, btnY + 36};
     DrawTextW(hdc, L"\uE8A7", 1, &oIconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     SelectObject(hdc, fontRegular_);
     SetTextColor(hdc, RGB(255, 255, 255));
-    RECT oTextRc{openBtnRc.left + 32, btnY, openBtnRc.right - 8, btnY + 36};
+    RECT oTextRc{openBtnRc.left + 28, btnY, openBtnRc.right - 6, btnY + 36};
     DrawTextW(hdc, L"Open File", 9, &oTextRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
-    RECT copyBtnRc{paneX + 195, btnY, width - 16, btnY + 36};
-    drawRoundedRect(hdc, copyBtnRc, 6, RGB(34, 38, 50), RGB(60, 68, 88));
+    // 2. Show in Folder Button (Secondary dark glass)
+    RECT folderBtnRc{paneX + 144, btnY, paneX + 276, btnY + 36};
+    drawRoundedRect(hdc, folderBtnRc, 8, RGB(26, 32, 44), RGB(56, 68, 92));
     SelectObject(hdc, fontIconsSmall_);
-    SetTextColor(hdc, RGB(180, 185, 200));
-    RECT cIconRc{copyBtnRc.left + 8, btnY, copyBtnRc.left + 28, btnY + 36};
+    SetTextColor(hdc, RGB(255, 195, 70));
+    RECT fIconRc{folderBtnRc.left + 8, btnY, folderBtnRc.left + 26, btnY + 36};
+    DrawTextW(hdc, L"\uE8B7", 1, &fIconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    SelectObject(hdc, fontRegular_);
+    SetTextColor(hdc, RGB(225, 230, 245));
+    RECT fTextRc{folderBtnRc.left + 28, btnY, folderBtnRc.right - 6, btnY + 36};
+    DrawTextW(hdc, L"In Folder", 9, &fTextRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+    // 3. Copy Path Button (Tertiary dark glass)
+    RECT copyBtnRc{paneX + 282, btnY, width - 16, btnY + 36};
+    drawRoundedRect(hdc, copyBtnRc, 8, RGB(26, 32, 44), RGB(56, 68, 92));
+    SelectObject(hdc, fontIconsSmall_);
+    SetTextColor(hdc, RGB(160, 175, 205));
+    RECT cIconRc{copyBtnRc.left + 8, btnY, copyBtnRc.left + 26, btnY + 36};
     DrawTextW(hdc, L"\uE8C8", 1, &cIconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     SelectObject(hdc, fontRegular_);
-    SetTextColor(hdc, RGB(220, 225, 235));
-    RECT cTextRc{copyBtnRc.left + 30, btnY, copyBtnRc.right - 6, btnY + 36};
+    SetTextColor(hdc, RGB(225, 230, 245));
+    RECT cTextRc{copyBtnRc.left + 28, btnY, copyBtnRc.right - 6, btnY + 36};
     DrawTextW(hdc, L"Copy Path", 9, &cTextRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 }
 
@@ -3716,7 +4485,12 @@ void MainWindow::paintStatusBar(HDC hdc, int width, int height) {
     SetBkMode(hdc, TRANSPARENT);
 
     wchar_t statusBuf[256];
-    if (selectedRow_ >= 0 && selectedRow_ < static_cast<int>(filteredIndices_.size())) {
+    if (isSearching_) {
+        swprintf_s(statusBuf, L"%zu results found for \"%s\"  |  %s  |  GodXplr High-Performance Local Engine",
+            filteredIndices_.size(),
+            currentSearchQuery_.c_str(),
+            hasExactSearchMatches_ ? L"Deep Recursive Search" : L"Intelligent Fuzzy Recommendation Engine");
+    } else if (selectedRow_ >= 0 && selectedRow_ < static_cast<int>(filteredIndices_.size())) {
         const auto& item = allItems_[filteredIndices_[selectedRow_]];
         swprintf_s(statusBuf, L"%zu items  |  1 item selected (%s)  |  GodXplr Local Engine",
             filteredIndices_.size(), formatSize(item.size).c_str());
@@ -3758,7 +4532,7 @@ void MainWindow::onPaint(HDC hdc) {
     paintSidebar(memDC, height);
 
     // 5. Main Surface (Home View vs Directory View)
-    if (isHomeView_) {
+    if (isHomeView_ && !isSearching_) {
         paintHomeView(memDC, width, height);
     } else {
         paintDirectoryView(memDC, width, height);

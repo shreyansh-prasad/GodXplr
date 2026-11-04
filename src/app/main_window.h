@@ -83,6 +83,9 @@ struct FileItemDisplay {
     uint32_t attributes{0};
     bool isDirectory{false};
     HICON hIcon{nullptr};
+    int matchScore{0};
+    bool isApproximateMatch{false};
+    std::wstring matchReason;
 };
 
 struct SidebarItem {
@@ -176,6 +179,8 @@ private:
     void refresh();
     void openSelectedItem();
     void openItem(const FileItemDisplay& item);
+    void executeDeepSearch(const std::wstring& rawQuery);
+    void showInFolder(const std::wstring& filePath);
 
     // Power & Command Ribbon Actions
     void createNewFolder();
@@ -252,9 +257,15 @@ private:
     int sidebarSelectedIndex_{-1};
 
     std::vector<FileItemDisplay> allItems_;
+    std::vector<FileItemDisplay> folderItems_;
     std::vector<size_t> filteredIndices_;
     std::vector<bool> checkedRows_;
     std::vector<std::wstring> favorites_;
+
+    bool isSearching_{false};
+    std::wstring currentSearchQuery_;
+    bool hasExactSearchMatches_{false};
+    std::wstring fuzzySuggestion_;
 
     std::vector<BreadcrumbPart> breadcrumbs_;
     std::vector<FilterPill> filterPills_;
@@ -284,7 +295,7 @@ private:
     int statusBarHeight_{32};
     int sidebarWidth_{270};
     int detailsPaneWidth_{320};
-    int previewPaneWidth_{380};
+    int previewPaneWidth_{420};
 
     // Column Widths
     int colNameWidth_{380};
@@ -319,6 +330,7 @@ private:
     HFONT fontIcons_{nullptr};
     HFONT fontIconsLarge_{nullptr};
     HFONT fontIconsSmall_{nullptr};
+    HFONT fontCode_{nullptr};
 
     ui::DesignTokens tokens_;
 
