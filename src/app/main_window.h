@@ -59,8 +59,10 @@ struct SidebarItem {
     std::wstring name;
     std::wstring path;
     std::wstring iconGlyph;
-    bool isDrive{false};
+    COLORREF iconColor{RGB(200, 200, 200)};
+    std::wstring subtext; // e.g. "142 GB free"
     bool isHeader{false};
+    bool isDrive{false};
 };
 
 struct TabInfo {
@@ -71,6 +73,22 @@ struct TabInfo {
 struct BreadcrumbPart {
     std::wstring label;
     std::wstring path;
+    RECT rect;
+};
+
+struct FilterPill {
+    FilterCategory cat;
+    std::wstring label;
+    std::wstring iconGlyph;
+    RECT rect;
+};
+
+struct QuickCard {
+    std::wstring name;
+    std::wstring subtext;
+    std::wstring path;
+    std::wstring iconGlyph;
+    COLORREF badgeColor;
     RECT rect;
 };
 
@@ -104,6 +122,7 @@ private:
     void paintTabBar(HDC hdc, int width);
     void paintNavAndAddressBar(HDC hdc, int width);
     void paintCommandBar(HDC hdc, int width);
+    void paintFilterPills(HDC hdc, int width, int topY);
     void paintSidebar(HDC hdc, int height);
     void paintHomeView(HDC hdc, int width, int height);
     void paintDirectoryView(HDC hdc, int width, int height);
@@ -143,6 +162,7 @@ private:
     // Helpers
     void initSidebar();
     void initKnownFolders();
+    void initFilterPills();
     HICON getFileIcon(const std::wstring& path, bool isDir, const std::wstring& ext);
 
     HINSTANCE hInstance_{nullptr};
@@ -167,34 +187,33 @@ private:
     std::vector<size_t> filteredIndices_;
 
     std::vector<BreadcrumbPart> breadcrumbs_;
+    std::vector<FilterPill> filterPills_;
+    int hoverPill_{-1};
     bool addressEditActive_{false};
 
-    // Quick Access cards for Home view
-    struct QuickCard {
-        std::wstring name;
-        std::wstring subtext;
-        std::wstring path;
-        std::wstring iconGlyph;
-        RECT rect;
-    };
     std::vector<QuickCard> quickCards_;
+    int homeSection_{0}; // 0: Recent, 1: Favorites, 2: Shared
+    RECT pillRecentRc_{};
+    RECT pillFavRc_{};
+    RECT pillSharedRc_{};
 
     int selectedRow_{-1};
     int hoverRow_{-1};
     int hoverCard_{-1};
     int scrollOffset_{0};
 
-    // Layout Dimensions
+    // Layout Dimensions (Modern, Spacious Visual Hierarchy)
     int tabBarHeight_{36};
     int navBarHeight_{42};
-    int commandBarHeight_{44};
-    int headerHeight_{28};
-    int rowHeight_{30};
-    int statusBarHeight_{26};
-    int sidebarWidth_{220};
+    int commandBarHeight_{42};
+    int filterBarHeight_{34};
+    int headerHeight_{30};
+    int rowHeight_{32};
+    int statusBarHeight_{28};
+    int sidebarWidth_{230};
 
     // Column Widths
-    int colNameWidth_{340};
+    int colNameWidth_{350};
     int colDateWidth_{160};
     int colTypeWidth_{130};
     int colSizeWidth_{100};
@@ -205,11 +224,14 @@ private:
     bool sortAscending_{true};
     FilterCategory filterCategory_{FilterCategory::All};
 
-    // GDI Resources
+    // GDI Typography & Icon Fonts
     HFONT fontRegular_{nullptr};
     HFONT fontBold_{nullptr};
     HFONT fontTitle_{nullptr};
     HFONT fontSmall_{nullptr};
+    HFONT fontIcons_{nullptr};
+    HFONT fontIconsLarge_{nullptr};
+    HFONT fontIconsSmall_{nullptr};
 
     ui::DesignTokens tokens_;
 

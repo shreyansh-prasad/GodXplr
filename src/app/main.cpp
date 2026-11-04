@@ -32,10 +32,17 @@ int WINAPI wWinMain(
         return 1;
     }
 
-    std::wstring initialPath = lpCmdLine ? lpCmdLine : L"";
-    // Strip surrounding quotes if present
-    if (initialPath.size() >= 2 && initialPath.front() == L'"' && initialPath.back() == L'"') {
-        initialPath = initialPath.substr(1, initialPath.size() - 2);
+    std::wstring initialPath;
+    if (__argc > 1 && __wargv && __wargv[1]) {
+        initialPath = __wargv[1];
+    } else if (lpCmdLine) {
+        initialPath = lpCmdLine;
+    }
+    while (!initialPath.empty() && (initialPath.front() == L' ' || initialPath.front() == L'\t' || initialPath.front() == L'"')) {
+        initialPath.erase(initialPath.begin());
+    }
+    while (!initialPath.empty() && (initialPath.back() == L' ' || initialPath.back() == L'\t' || initialPath.back() == L'"')) {
+        initialPath.pop_back();
     }
 
     auto* mainWindow = gx::app::MainWindow::create(hInstance, initialPath);

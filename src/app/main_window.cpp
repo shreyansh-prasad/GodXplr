@@ -95,6 +95,20 @@ std::wstring toLower(std::wstring_view s) {
     return out;
 }
 
+void drawRoundedRect(HDC hdc, const RECT& rc, int radius, COLORREF fillColor, COLORREF borderColor) {
+    HBRUSH brush = CreateSolidBrush(fillColor);
+    HPEN pen = CreatePen(PS_SOLID, 1, borderColor);
+    HGDIOBJ oldBrush = SelectObject(hdc, brush);
+    HGDIOBJ oldPen = SelectObject(hdc, pen);
+
+    RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, radius, radius);
+
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+}
+
 } // namespace
 
 bool MainWindow::registerWindowClass(HINSTANCE hInstance) {
@@ -114,8 +128,8 @@ MainWindow* MainWindow::create(HINSTANCE hInstance, const std::wstring& initialP
 
     int screenW = GetSystemMetrics(SM_CXSCREEN);
     int screenH = GetSystemMetrics(SM_CYSCREEN);
-    int initW = 1240;
-    int initH = 800;
+    int initW = 1260;
+    int initH = 820;
     int initX = (screenW - initW) / 2;
     int initY = (screenH - initH) / 2;
 
@@ -123,7 +137,7 @@ MainWindow* MainWindow::create(HINSTANCE hInstance, const std::wstring& initialP
         WS_EX_APPWINDOW,
         kClassName,
         L"GodXplr",
-        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_VSCROLL,
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_VSCROLL | WS_VISIBLE,
         initX, initY, initW, initH,
         nullptr, nullptr, hInstance, window);
 
@@ -147,7 +161,9 @@ MainWindow::MainWindow(HINSTANCE hInstance)
 {
     initKnownFolders();
     initSidebar();
+    initFilterPills();
 
+    // Standard High-Quality Windows UI Fonts
     fontRegular_ = CreateFontW(
         -13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
@@ -169,6 +185,40 @@ MainWindow::MainWindow(HINSTANCE hInstance)
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Variable Text");
 
+    // Native Microsoft Fluent Vector Icon Fonts (Installed on all Windows 10/11)
+    fontIcons_ = CreateFontW(
+        -16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe Fluent Icons");
+    if (!fontIcons_) {
+        fontIcons_ = CreateFontW(
+            -16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe MDL2 Assets");
+    }
+
+    fontIconsLarge_ = CreateFontW(
+        -26, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe Fluent Icons");
+    if (!fontIconsLarge_) {
+        fontIconsLarge_ = CreateFontW(
+            -26, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe MDL2 Assets");
+    }
+
+    fontIconsSmall_ = CreateFontW(
+        -12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe Fluent Icons");
+    if (!fontIconsSmall_) {
+        fontIconsSmall_ = CreateFontW(
+            -12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe MDL2 Assets");
+    }
+
     // Default tab
     tabs_.push_back({ L"Home", L"godxplr://home" });
 }
@@ -178,6 +228,9 @@ MainWindow::~MainWindow() {
     if (fontBold_) DeleteObject(fontBold_);
     if (fontTitle_) DeleteObject(fontTitle_);
     if (fontSmall_) DeleteObject(fontSmall_);
+    if (fontIcons_) DeleteObject(fontIcons_);
+    if (fontIconsLarge_) DeleteObject(fontIconsLarge_);
+    if (fontIconsSmall_) DeleteObject(fontIconsSmall_);
 }
 
 void MainWindow::initKnownFolders() {
@@ -190,22 +243,35 @@ void MainWindow::initKnownFolders() {
     pathHome_ = getKnownPath(FOLDERID_Profile);
 }
 
+void MainWindow::initFilterPills() {
+    filterPills_.clear();
+    filterPills_.push_back({ FilterCategory::All, L"All", L"\uE71D", {} });
+    filterPills_.push_back({ FilterCategory::Folders, L"Folders", L"\uE8B7", {} });
+    filterPills_.push_back({ FilterCategory::Documents, L"Documents", L"\uE8A5", {} });
+    filterPills_.push_back({ FilterCategory::Pictures, L"Pictures", L"\uEB9F", {} });
+    filterPills_.push_back({ FilterCategory::AudioVideo, L"Media", L"\uE714", {} });
+    filterPills_.push_back({ FilterCategory::Compressed, L"Archives", L"\uF133", {} });
+    filterPills_.push_back({ FilterCategory::Code, L"Code", L"\uE943", {} });
+}
+
 void MainWindow::initSidebar() {
     sidebarItems_.clear();
 
-    // Section 1: Quick access / Pinned
-    sidebarItems_.push_back({ L"Home", L"godxplr://home", L"🏠", false, false });
-    sidebarItems_.push_back({ L"Gallery", pathPictures_, L"🖼", false, false });
-    sidebarItems_.push_back({ L"Desktop", pathDesktop_, L"💻", false, false });
-    sidebarItems_.push_back({ L"Downloads", pathDownloads_, L"⬇", false, false });
-    sidebarItems_.push_back({ L"Documents", pathDocuments_, L"📁", false, false });
-    sidebarItems_.push_back({ L"Pictures", pathPictures_, L"🌄", false, false });
-    sidebarItems_.push_back({ L"Music", pathMusic_, L"🎵", false, false });
-    sidebarItems_.push_back({ L"Videos", pathVideos_, L"🎬", false, false });
-    sidebarItems_.push_back({ L"os fileX", L"C:\\os fileX", L"📂", false, false });
+    // Section 1: Favorites / Pinned (Fluent Icons with custom accent colors)
+    sidebarItems_.push_back({ L"FAVORITES", L"", L"", RGB(120, 120, 120), L"", true, false });
+    sidebarItems_.push_back({ L"Home", L"godxplr://home", L"\uE80F", RGB(96, 205, 255), L"", false, false });
+    sidebarItems_.push_back({ L"Gallery", pathPictures_, L"\uEB9F", RGB(62, 166, 255), L"", false, false });
+    sidebarItems_.push_back({ L"Desktop", pathDesktop_, L"\uE7F4", RGB(0, 150, 255), L"", false, false });
+    sidebarItems_.push_back({ L"Downloads", pathDownloads_, L"\uE896", RGB(0, 185, 150), L"", false, false });
+    sidebarItems_.push_back({ L"Documents", pathDocuments_, L"\uE8A5", RGB(70, 150, 245), L"", false, false });
+    sidebarItems_.push_back({ L"Pictures", pathPictures_, L"\uEB9F", RGB(177, 70, 194), L"", false, false });
+    sidebarItems_.push_back({ L"Music", pathMusic_, L"\uE8D6", RGB(255, 140, 0), L"", false, false });
+    sidebarItems_.push_back({ L"Videos", pathVideos_, L"\uE714", RGB(232, 17, 35), L"", false, false });
+    sidebarItems_.push_back({ L"os fileX", L"C:\\os fileX", L"\uE8B7", RGB(245, 195, 65), L"", false, false });
 
-    // Section 2: This PC / Drives
-    sidebarItems_.push_back({ L"This PC", L"C:\\", L"💻", false, false });
+    // Section 2: Drives & Network
+    sidebarItems_.push_back({ L"DRIVES & NETWORK", L"", L"", RGB(120, 120, 120), L"", true, false });
+    sidebarItems_.push_back({ L"This PC", L"C:\\", L"\uE7F4", RGB(180, 180, 180), L"", false, false });
 
     WCHAR driveStrings[512]{};
     DWORD len = GetLogicalDriveStringsW(511, driveStrings);
@@ -219,29 +285,36 @@ void MainWindow::initSidebar() {
             std::wstring label = (volName[0] != L'\0') ? volName : L"Local Disk";
             label += L" (" + root.substr(0, 2) + L")";
 
-            sidebarItems_.push_back({ label, root, L"💾", true, false });
+            ULARGE_INTEGER freeBytes{}, totalBytes{};
+            std::wstring freeText;
+            if (GetDiskFreeSpaceExW(root.c_str(), &freeBytes, &totalBytes, nullptr)) {
+                freeText = formatSize(freeBytes.QuadPart) + L" free";
+            }
+
+            sidebarItems_.push_back({ label, root, L"\uEDA2", RGB(96, 205, 255), freeText, false, true });
             ptr += wcslen(ptr) + 1;
         }
     }
 
-    sidebarItems_.push_back({ L"Network", L"godxplr://network", L"🌐", false, false });
-    sidebarItems_.push_back({ L"Recycle Bin", L"shell:RecycleBinFolder", L"🗑", false, false });
+    sidebarItems_.push_back({ L"Network", L"godxplr://network", L"\uE774", RGB(70, 150, 245), L"", false, false });
+    sidebarItems_.push_back({ L"Recycle Bin", L"shell:RecycleBinFolder", L"\uE748", RGB(160, 160, 160), L"", false, false });
 
-    // Quick Access cards for Home View
+    // Quick Access cards for Home View (Faithfully matching Windows 11 Explorer)
     quickCards_ = {
-        { L"Desktop", L"Stored locally", pathDesktop_, L"💻", {} },
-        { L"Downloads", L"Stored locally", pathDownloads_, L"⬇", {} },
-        { L"Documents", L"Stored locally", pathDocuments_, L"📁", {} },
-        { L"Pictures", L"Stored locally", pathPictures_, L"🌄", {} },
-        { L"Music", L"Stored locally", pathMusic_, L"🎵", {} },
-        { L"Videos", L"Stored locally", pathVideos_, L"🎬", {} },
-        { L"os fileX", L"Windows-SSD (C:)", L"C:\\os fileX", L"📂", {} },
-        { L"Windows-SSD (C:)", L"System Drive", L"C:\\", L"💾", {} }
+        { L"Desktop", L"Stored locally", pathDesktop_, L"\uE7F4", RGB(0, 120, 215), {} },
+        { L"Downloads", L"Stored locally", pathDownloads_, L"\uE896", RGB(0, 178, 148), {} },
+        { L"Documents", L"Stored locally", pathDocuments_, L"\uE8A5", RGB(0, 120, 215), {} },
+        { L"Pictures", L"Stored locally", pathPictures_, L"\uEB9F", RGB(177, 70, 194), {} },
+        { L"Music", L"Stored locally", pathMusic_, L"\uE8D6", RGB(255, 140, 0), {} },
+        { L"Videos", L"Stored locally", pathVideos_, L"\uE714", RGB(232, 17, 35), {} },
+        { L"os fileX", L"Windows-SSD (C:)", L"C:\\os fileX", L"\uE8B7", RGB(245, 195, 65), {} },
+        { L"Windows-SSD (C:)", L"System Drive", L"C:\\", L"\uEDA2", RGB(96, 205, 255), {} }
     };
 }
 
 void MainWindow::show(int nCmdShow) {
-    ShowWindow(hwnd_, nCmdShow);
+    int cmd = (nCmdShow == 0 || nCmdShow == SW_HIDE) ? SW_SHOWNORMAL : nCmdShow;
+    ShowWindow(hwnd_, cmd);
     UpdateWindow(hwnd_);
 }
 
@@ -265,23 +338,23 @@ LRESULT CALLBACK MainWindow::windowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPA
 LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
     case WM_CREATE: {
-        // Address Edit Control
+        // Address Edit Control (Hidden until user clicks address container)
         editAddress_ = CreateWindowExW(
-            WS_EX_CLIENTEDGE,
+            0,
             L"EDIT",
             L"",
             WS_CHILD | ES_AUTOHSCROLL,
-            160, 42, 500, 28,
+            150, 42, 500, 26,
             hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdAddressEdit)), hInstance_, nullptr);
         SendMessageW(editAddress_, WM_SETFONT, (WPARAM)fontRegular_, TRUE);
 
         // Search Edit Control
         editSearch_ = CreateWindowExW(
-            WS_EX_CLIENTEDGE,
+            0,
             L"EDIT",
             L"",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            680, 42, 260, 28,
+            680, 42, 240, 26,
             hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdSearchEdit)), hInstance_, nullptr);
         SendMessageW(editSearch_, WM_SETFONT, (WPARAM)fontRegular_, TRUE);
         return 0;
@@ -302,10 +375,9 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
             }
             ShowWindow(editAddress_, SW_HIDE);
             addressEditActive_ = false;
-            InvalidateRect(hwnd_, nullptr, FALSE);
         }
 
-        // Context / Menu actions
+        // Context Menus Commands
         switch (id) {
         case kCmdNewFolder: createNewFolder(); break;
         case kCmdNewFile: createNewTextFile(); break;
@@ -313,8 +385,8 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
         case kCmdSortDate: setSortColumn(SortColumn::DateModified); break;
         case kCmdSortType: setSortColumn(SortColumn::Type); break;
         case kCmdSortSize: setSortColumn(SortColumn::Size); break;
-        case kCmdSortAsc: sortAscending_ = true; filterAndSortItems(); break;
-        case kCmdSortDesc: sortAscending_ = false; filterAndSortItems(); break;
+        case kCmdSortAsc: sortAscending_ = true; filterAndSortItems(); InvalidateRect(hwnd_, nullptr, FALSE); break;
+        case kCmdSortDesc: sortAscending_ = false; filterAndSortItems(); InvalidateRect(hwnd_, nullptr, FALSE); break;
         case kCmdViewDetails: viewMode_ = ViewMode::Details; InvalidateRect(hwnd_, nullptr, FALSE); break;
         case kCmdViewList: viewMode_ = ViewMode::List; InvalidateRect(hwnd_, nullptr, FALSE); break;
         case kCmdViewGrid: viewMode_ = ViewMode::Grid; InvalidateRect(hwnd_, nullptr, FALSE); break;
@@ -329,13 +401,6 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
 
-    case WM_SIZE: {
-        int w = LOWORD(lParam);
-        int h = HIWORD(lParam);
-        onResize(w, h);
-        return 0;
-    }
-
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd_, &ps);
@@ -344,8 +409,14 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
 
-    case WM_ERASEBKGND:
-        return 1; // Double buffered, avoid flicker
+    case WM_PRINT:
+    case WM_PRINTCLIENT:
+        onPaint(reinterpret_cast<HDC>(wParam));
+        return 0;
+
+    case WM_SIZE:
+        onResize(LOWORD(lParam), HIWORD(lParam));
+        return 0;
 
     case WM_VSCROLL:
         onVScroll(wParam);
@@ -355,37 +426,28 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
         onMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam));
         return 0;
 
-    case WM_MOUSEMOVE: {
-        int x = LOWORD(lParam);
-        int y = HIWORD(lParam);
-        onMouseMove(x, y);
+    case WM_LBUTTONDOWN:
+        onLButtonDown(LOWORD(lParam), HIWORD(lParam), false);
         return 0;
-    }
 
-    case WM_LBUTTONDOWN: {
-        int x = LOWORD(lParam);
-        int y = HIWORD(lParam);
-        onLButtonDown(x, y, false);
+    case WM_LBUTTONDBLCLK:
+        onLButtonDown(LOWORD(lParam), HIWORD(lParam), true);
         return 0;
-    }
 
-    case WM_LBUTTONDBLCLK: {
-        int x = LOWORD(lParam);
-        int y = HIWORD(lParam);
-        onLButtonDown(x, y, true);
+    case WM_RBUTTONUP:
+        onRButtonUp(LOWORD(lParam), HIWORD(lParam));
         return 0;
-    }
 
-    case WM_RBUTTONUP: {
-        int x = LOWORD(lParam);
-        int y = HIWORD(lParam);
-        onRButtonUp(x, y);
+    case WM_MOUSEMOVE:
+        onMouseMove(LOWORD(lParam), HIWORD(lParam));
         return 0;
-    }
 
     case WM_KEYDOWN:
         onKeyDown(wParam);
         return 0;
+
+    case WM_ERASEBKGND:
+        return 1;
 
     case WM_DESTROY:
         PostQuitMessage(0);
@@ -398,106 +460,116 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
 void MainWindow::onResize(int width, int height) {
     (void)height;
     if (editAddress_ && editSearch_) {
-        int navY = tabBarHeight_ + 7;
-        int searchWidth = 260;
-        int searchX = width - searchWidth - 15;
+        int searchW = 260;
+        int searchX = width - searchW - 20;
         int addrX = 145;
-        int addrWidth = std::max(120, searchX - addrX - 15);
+        int addrW = searchX - addrX - 15;
 
-        SetWindowPos(editAddress_, nullptr, addrX, navY, addrWidth, 26, SWP_NOZORDER);
-        SetWindowPos(editSearch_, nullptr, searchX, navY, searchWidth, 26, SWP_NOZORDER);
+        SetWindowPos(editAddress_, nullptr, addrX + 8, tabBarHeight_ + 8, addrW - 16, 24, SWP_NOZORDER);
+        SetWindowPos(editSearch_, nullptr, searchX + 30, tabBarHeight_ + 8, searchW - 40, 24, SWP_NOZORDER);
     }
     updateScrollInfo();
     InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
 void MainWindow::onVScroll(WPARAM wParam) {
-    int code = LOWORD(wParam);
-    SCROLLINFO si{};
-    si.cbSize = sizeof(si);
-    si.fMask = SIF_ALL;
-    GetScrollInfo(hwnd_, SB_VERT, &si);
+    int count = static_cast<int>(filteredIndices_.size());
+    RECT rc;
+    GetClientRect(hwnd_, &rc);
+    int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
+    int listTop = contentTop + (isHomeView_ ? 240 : filterBarHeight_ + headerHeight_);
+    int surfaceHeight = rc.bottom - listTop - statusBarHeight_;
+    int visibleRows = std::max(1, surfaceHeight / rowHeight_);
+    int maxScroll = std::max(0, count - visibleRows);
 
-    int newPos = si.nPos;
-    switch (code) {
-    case SB_LINEUP: newPos -= 1; break;
-    case SB_LINEDOWN: newPos += 1; break;
-    case SB_PAGEUP: newPos -= si.nPage; break;
-    case SB_PAGEDOWN: newPos += si.nPage; break;
-    case SB_THUMBTRACK: newPos = si.nTrackPos; break;
+    switch (LOWORD(wParam)) {
+    case SB_LINEUP: scrollOffset_ = std::max(0, scrollOffset_ - 1); break;
+    case SB_LINEDOWN: scrollOffset_ = std::min(maxScroll, scrollOffset_ + 1); break;
+    case SB_PAGEUP: scrollOffset_ = std::max(0, scrollOffset_ - visibleRows); break;
+    case SB_PAGEDOWN: scrollOffset_ = std::min(maxScroll, scrollOffset_ + visibleRows); break;
+    case SB_THUMBPOSITION:
+    case SB_THUMBTRACK: scrollOffset_ = HIWORD(wParam); break;
     }
 
-    newPos = std::clamp(newPos, 0, std::max(0, si.nMax - static_cast<int>(si.nPage) + 1));
-    if (newPos != si.nPos) {
-        scrollOffset_ = newPos;
-        SetScrollPos(hwnd_, SB_VERT, newPos, TRUE);
-        InvalidateRect(hwnd_, nullptr, FALSE);
-    }
+    updateScrollInfo();
+    InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
 void MainWindow::onMouseWheel(short delta) {
-    int rows = -delta / WHEEL_DELTA * 3;
-    int maxScroll = std::max(0, static_cast<int>(filteredIndices_.size()) - 10);
-    int newScroll = std::clamp(scrollOffset_ + rows, 0, maxScroll);
-    if (newScroll != scrollOffset_) {
-        scrollOffset_ = newScroll;
-        SetScrollPos(hwnd_, SB_VERT, scrollOffset_, TRUE);
-        InvalidateRect(hwnd_, nullptr, FALSE);
-    }
+    int lines = -delta / WHEEL_DELTA * 3;
+    int count = static_cast<int>(filteredIndices_.size());
+    RECT rc;
+    GetClientRect(hwnd_, &rc);
+    int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
+    int listTop = contentTop + (isHomeView_ ? 240 : filterBarHeight_ + headerHeight_);
+    int surfaceHeight = rc.bottom - listTop - statusBarHeight_;
+    int visibleRows = std::max(1, surfaceHeight / rowHeight_);
+    int maxScroll = std::max(0, count - visibleRows);
+
+    scrollOffset_ = std::clamp(scrollOffset_ + lines, 0, maxScroll);
+    updateScrollInfo();
+    InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
 void MainWindow::onMouseMove(int x, int y) {
     int oldSidebar = sidebarHoverIndex_;
     int oldHoverRow = hoverRow_;
     int oldCard = hoverCard_;
+    int oldPill = hoverPill_;
 
     sidebarHoverIndex_ = -1;
     hoverRow_ = -1;
     hoverCard_ = -1;
+    hoverPill_ = -1;
 
     int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
 
-    // Check Sidebar hover
-    if (x >= 0 && x < sidebarWidth_ && y >= contentTop) {
-        int sideY = y - contentTop - 10;
-        if (sideY >= 0) {
-            int idx = sideY / 32;
-            if (idx >= 0 && idx < static_cast<int>(sidebarItems_.size())) {
-                sidebarHoverIndex_ = idx;
+    // 1. Sidebar Hover
+    if (x < sidebarWidth_ && y >= contentTop) {
+        int sideY = y - contentTop - 8;
+        int curY = 0;
+        for (size_t i = 0; i < sidebarItems_.size(); ++i) {
+            int h = sidebarItems_[i].isHeader ? 22 : 30;
+            if (sideY >= curY && sideY < curY + h) {
+                if (!sidebarItems_[i].isHeader) {
+                    sidebarHoverIndex_ = static_cast<int>(i);
+                }
+                break;
+            }
+            curY += h;
+        }
+    }
+
+    // 2. Filter Pills Hover (Directory View)
+    if (!isHomeView_ && x >= sidebarWidth_ && y >= contentTop && y < contentTop + filterBarHeight_) {
+        for (size_t i = 0; i < filterPills_.size(); ++i) {
+            if (PtInRect(&filterPills_[i].rect, POINT{x, y})) {
+                hoverPill_ = static_cast<int>(i);
+                break;
             }
         }
     }
 
-    // Check Main surface hover
-    if (x >= sidebarWidth_ && y >= contentTop) {
-        if (isHomeView_) {
-            // Check Quick cards hover
-            for (size_t i = 0; i < quickCards_.size(); ++i) {
-                if (PtInRect(&quickCards_[i].rect, POINT{x, y})) {
-                    hoverCard_ = static_cast<int>(i);
-                    break;
-                }
-            }
-
-            int tableTop = contentTop + 180 + 32 + headerHeight_;
-            if (y >= tableTop) {
-                int r = scrollOffset_ + ((y - tableTop) / rowHeight_);
-                if (r >= 0 && r < static_cast<int>(filteredIndices_.size())) {
-                    hoverRow_ = r;
-                }
-            }
-        } else {
-            int tableTop = contentTop + headerHeight_;
-            if (y >= tableTop) {
-                int r = scrollOffset_ + ((y - tableTop) / rowHeight_);
-                if (r >= 0 && r < static_cast<int>(filteredIndices_.size())) {
-                    hoverRow_ = r;
-                }
+    // 3. Quick Cards Hover (Home View)
+    if (isHomeView_ && x >= sidebarWidth_) {
+        for (size_t i = 0; i < quickCards_.size(); ++i) {
+            if (PtInRect(&quickCards_[i].rect, POINT{x, y})) {
+                hoverCard_ = static_cast<int>(i);
+                break;
             }
         }
     }
 
-    if (sidebarHoverIndex_ != oldSidebar || hoverRow_ != oldHoverRow || hoverCard_ != oldCard) {
+    // 4. File Row Hover
+    int listTop = contentTop + (isHomeView_ ? 240 : filterBarHeight_ + headerHeight_);
+    if (x >= sidebarWidth_ && y >= listTop) {
+        int r = scrollOffset_ + ((y - listTop) / rowHeight_);
+        if (r >= 0 && r < static_cast<int>(filteredIndices_.size())) {
+            hoverRow_ = r;
+        }
+    }
+
+    if (sidebarHoverIndex_ != oldSidebar || hoverRow_ != oldHoverRow || hoverCard_ != oldCard || hoverPill_ != oldPill) {
         InvalidateRect(hwnd_, nullptr, FALSE);
     }
 }
@@ -505,7 +577,7 @@ void MainWindow::onMouseMove(int x, int y) {
 void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
     // 1. Tab Bar Clicks (y in 0 .. tabBarHeight_)
     if (y < tabBarHeight_) {
-        int tabX = 10;
+        int tabX = 12;
         for (size_t i = 0; i < tabs_.size(); ++i) {
             RECT tabRc{tabX, 4, tabX + 160, tabBarHeight_};
             if (x >= tabRc.left && x < tabRc.right) {
@@ -518,7 +590,7 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
                 InvalidateRect(hwnd_, nullptr, FALSE);
                 return;
             }
-            tabX += 165;
+            tabX += 166;
         }
 
         // New Tab (+) button
@@ -537,10 +609,10 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
     int navTop = tabBarHeight_;
     int navBottom = navTop + navBarHeight_;
     if (y >= navTop && y < navBottom) {
-        if (x >= 10 && x < 38) navigateBack();
-        else if (x >= 42 && x < 70) navigateForward();
-        else if (x >= 74 && x < 102) navigateUp();
-        else if (x >= 106 && x < 134) refresh();
+        if (x >= 12 && x < 40) navigateBack();
+        else if (x >= 44 && x < 72) navigateForward();
+        else if (x >= 76 && x < 104) navigateUp();
+        else if (x >= 108 && x < 136) refresh();
         else {
             // Check breadcrumb clicks
             for (const auto& bc : breadcrumbs_) {
@@ -554,8 +626,8 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
             // Clicked empty address area -> show edit
             RECT clientRc;
             GetClientRect(hwnd_, &clientRc);
-            int searchX = clientRc.right - 275;
-            if (x >= 140 && x < searchX) {
+            int searchX = clientRc.right - 280;
+            if (x >= 145 && x < searchX) {
                 addressEditActive_ = true;
                 SetWindowTextW(editAddress_, currentPath_.c_str());
                 ShowWindow(editAddress_, SW_SHOW);
@@ -569,23 +641,25 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
     int cmdTop = navBottom;
     int cmdBottom = cmdTop + commandBarHeight_;
     if (y >= cmdTop && y < cmdBottom) {
-        if (x >= 10 && x < 90) {
+        if (x >= 12 && x < 96) {
             showNewMenu(x, cmdBottom);
-        } else if (x >= 95 && x < 130) {
+        } else if (x >= 102 && x < 136) {
             cutSelectedItem();
-        } else if (x >= 135 && x < 170) {
+        } else if (x >= 140 && x < 174) {
             copySelectedItem();
-        } else if (x >= 175 && x < 210) {
+        } else if (x >= 178 && x < 212) {
             pasteItem();
-        } else if (x >= 215 && x < 255) {
+        } else if (x >= 216 && x < 250) {
             renameSelectedItem();
-        } else if (x >= 260 && x < 300) {
+        } else if (x >= 254 && x < 288) {
+            // Share
+        } else if (x >= 292 && x < 326) {
             deleteSelectedItem();
-        } else if (x >= 310 && x < 380) {
+        } else if (x >= 335 && x < 415) {
             showSortMenu(x, cmdBottom);
-        } else if (x >= 385 && x < 455) {
+        } else if (x >= 420 && x < 500) {
             showViewMenu(x, cmdBottom);
-        } else if (x >= 460 && x < 540) {
+        } else if (x >= 505 && x < 595) {
             showFilterMenu(x, cmdBottom);
         }
         return;
@@ -594,28 +668,44 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
     // 4. Sidebar Clicks (x in 0 .. sidebarWidth_)
     int contentTop = cmdBottom;
     if (x < sidebarWidth_ && y >= contentTop) {
-        int sideY = y - contentTop - 10;
-        if (sideY >= 0) {
-            int idx = sideY / 32;
-            if (idx >= 0 && idx < static_cast<int>(sidebarItems_.size())) {
-                sidebarSelectedIndex_ = idx;
-                const auto& item = sidebarItems_[idx];
-                if (item.path == L"godxplr://home") {
-                    navigateToHome();
-                } else if (item.path == L"shell:RecycleBinFolder") {
-                    ShellExecuteW(hwnd_, L"open", L"shell:RecycleBinFolder", nullptr, nullptr, SW_SHOWNORMAL);
-                } else if (std::filesystem::exists(item.path)) {
-                    navigateTo(std::filesystem::path(item.path));
+        int sideY = y - contentTop - 8;
+        int curY = 0;
+        for (size_t i = 0; i < sidebarItems_.size(); ++i) {
+            int h = sidebarItems_[i].isHeader ? 22 : 30;
+            if (sideY >= curY && sideY < curY + h) {
+                if (!sidebarItems_[i].isHeader) {
+                    sidebarSelectedIndex_ = static_cast<int>(i);
+                    const auto& item = sidebarItems_[i];
+                    if (item.path == L"godxplr://home") {
+                        navigateToHome();
+                    } else if (item.path == L"shell:RecycleBinFolder") {
+                        ShellExecuteW(hwnd_, L"open", L"shell:RecycleBinFolder", nullptr, nullptr, SW_SHOWNORMAL);
+                    } else if (std::filesystem::exists(item.path)) {
+                        navigateTo(std::filesystem::path(item.path));
+                    }
+                    InvalidateRect(hwnd_, nullptr, FALSE);
                 }
-                InvalidateRect(hwnd_, nullptr, FALSE);
+                return;
+            }
+            curY += h;
+        }
+        return;
+    }
+
+    // 5. Directory View: 1-Click Quick Filter Pills Clicks!
+    if (!isHomeView_ && x >= sidebarWidth_ && y >= contentTop && y < contentTop + filterBarHeight_) {
+        for (const auto& pill : filterPills_) {
+            if (PtInRect(&pill.rect, POINT{x, y})) {
+                setFilterCategory(pill.cat);
+                return;
             }
         }
         return;
     }
 
-    // 5. Column Header Click (Sorting!)
-    if (x >= sidebarWidth_ && !isHomeView_) {
-        int hdrTop = contentTop;
+    // 6. Directory View: Column Header Click (Interactive Sorting!)
+    if (!isHomeView_ && x >= sidebarWidth_) {
+        int hdrTop = contentTop + filterBarHeight_;
         int hdrBottom = hdrTop + headerHeight_;
         if (y >= hdrTop && y < hdrBottom) {
             int relX = x - sidebarWidth_;
@@ -632,8 +722,9 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
         }
     }
 
-    // 6. Home View Quick Cards Click
-    if (x >= sidebarWidth_ && isHomeView_) {
+    // 7. Home View: Quick Cards & Section Tabs Clicks
+    if (isHomeView_ && x >= sidebarWidth_) {
+        // Quick Cards
         for (const auto& card : quickCards_) {
             if (PtInRect(&card.rect, POINT{x, y})) {
                 if (std::filesystem::exists(card.path)) {
@@ -642,10 +733,26 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
                 return;
             }
         }
+
+        // Section Tabs: (Recent), (Favorites), (Shared)
+        POINT pt{x, y};
+        if (PtInRect(&pillRecentRc_, pt)) {
+            homeSection_ = 0;
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        } else if (PtInRect(&pillFavRc_, pt)) {
+            homeSection_ = 1;
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        } else if (PtInRect(&pillSharedRc_, pt)) {
+            homeSection_ = 2;
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        }
     }
 
-    // 7. File List Click & Double-Click (File Opening!)
-    int listTop = contentTop + (isHomeView_ ? 180 + 32 + headerHeight_ : headerHeight_);
+    // 8. File List Row Click & Double-Click (File Execution!)
+    int listTop = contentTop + (isHomeView_ ? 240 : filterBarHeight_ + headerHeight_);
     if (x >= sidebarWidth_ && y >= listTop) {
         int clickedRow = scrollOffset_ + ((y - listTop) / rowHeight_);
         if (clickedRow >= 0 && clickedRow < static_cast<int>(filteredIndices_.size())) {
@@ -661,7 +768,7 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
 
 void MainWindow::onRButtonUp(int x, int y) {
     int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
-    int listTop = contentTop + (isHomeView_ ? 180 + 32 + headerHeight_ : headerHeight_);
+    int listTop = contentTop + (isHomeView_ ? 240 : filterBarHeight_ + headerHeight_);
 
     if (x >= sidebarWidth_ && y >= listTop) {
         int clickedRow = scrollOffset_ + ((y - listTop) / rowHeight_);
@@ -703,7 +810,9 @@ void MainWindow::onKeyDown(WPARAM key) {
             selectedRow_++;
             RECT clientRc;
             GetClientRect(hwnd_, &clientRc);
-            int surfaceHeight = clientRc.bottom - (tabBarHeight_ + navBarHeight_ + commandBarHeight_ + headerHeight_ + statusBarHeight_);
+            int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
+            int listTop = contentTop + (isHomeView_ ? 240 : filterBarHeight_ + headerHeight_);
+            int surfaceHeight = clientRc.bottom - listTop - statusBarHeight_;
             int visibleRows = std::max(1, surfaceHeight / rowHeight_);
             if (selectedRow_ >= scrollOffset_ + visibleRows) {
                 scrollOffset_ = selectedRow_ - visibleRows + 1;
@@ -750,140 +859,97 @@ void MainWindow::navigateTo(const std::filesystem::path& path) {
         return;
     }
 
-    if (!isHomeView_ && currentPath_ != path) {
+    if (!currentPath_.empty() && currentPath_ != path) {
         backStack_.push_back(currentPath_);
         forwardStack_.clear();
     }
 
-    isHomeView_ = false;
     currentPath_ = std::filesystem::canonical(path, ec);
     if (ec) currentPath_ = path;
 
+    isHomeView_ = false;
+
     // Update active tab title
-    std::wstring folderName = currentPath_.filename().wstring();
-    if (folderName.empty()) folderName = currentPath_.wstring();
     if (activeTab_ < tabs_.size()) {
-        tabs_[activeTab_].title = folderName;
+        tabs_[activeTab_].title = currentPath_.filename().wstring();
+        if (tabs_[activeTab_].title.empty()) tabs_[activeTab_].title = currentPath_.wstring();
         tabs_[activeTab_].path = currentPath_.wstring();
     }
 
-    SetWindowTextW(editAddress_, currentPath_.c_str());
-    SetWindowTextW(editSearch_, L"");
+    // Enumerate directory
+    allItems_.clear();
+    try {
+        for (const auto& entry : std::filesystem::directory_iterator(currentPath_, std::filesystem::directory_options::skip_permission_denied)) {
+            FileItemDisplay item;
+            item.name = entry.path().filename().wstring();
+            item.isDirectory = entry.is_directory(ec);
+            if (!item.isDirectory) {
+                item.extension = entry.path().extension().wstring();
+                if (!item.extension.empty() && item.extension[0] == L'.') {
+                    item.extension = item.extension.substr(1);
+                }
+                item.size = entry.file_size(ec);
+            }
+            WIN32_FILE_ATTRIBUTE_DATA fad{};
+            if (GetFileAttributesExW(entry.path().c_str(), GetFileExInfoStandard, &fad)) {
+                ULARGE_INTEGER uli;
+                uli.LowPart = fad.ftLastWriteTime.dwLowDateTime;
+                uli.HighPart = fad.ftLastWriteTime.dwHighDateTime;
+                item.mtime = uli.QuadPart;
+            }
 
-    refresh();
+            allItems_.push_back(std::move(item));
+        }
+    } catch (...) {}
+
+    filterAndSortItems();
+    selectedRow_ = filteredIndices_.empty() ? -1 : 0;
+    scrollOffset_ = 0;
+    updateScrollInfo();
+    InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
 void MainWindow::navigateToHome() {
     isHomeView_ = true;
-    currentPath_ = L"godxplr://home";
+    currentPath_.clear();
 
     if (activeTab_ < tabs_.size()) {
         tabs_[activeTab_].title = L"Home";
         tabs_[activeTab_].path = L"godxplr://home";
     }
 
-    SetWindowTextW(editAddress_, L"Home");
-    SetWindowTextW(editSearch_, L"");
-
-    refresh();
-}
-
-void MainWindow::navigateUp() {
-    if (isHomeView_) return;
-    if (currentPath_.has_parent_path() && currentPath_ != currentPath_.parent_path()) {
-        navigateTo(currentPath_.parent_path());
-    } else {
-        navigateToHome();
-    }
-}
-
-void MainWindow::navigateBack() {
-    if (!backStack_.empty()) {
-        auto prev = backStack_.back();
-        backStack_.pop_back();
-        forwardStack_.push_back(currentPath_);
-        navigateTo(prev);
-    } else if (!isHomeView_) {
-        navigateToHome();
-    }
-}
-
-void MainWindow::navigateForward() {
-    if (!forwardStack_.empty()) {
-        auto next = forwardStack_.back();
-        forwardStack_.pop_back();
-        backStack_.push_back(currentPath_);
-        navigateTo(next);
-    }
-}
-
-void MainWindow::refresh() {
+    // Populate Recent Items from user profile / downloads
     allItems_.clear();
-    filteredIndices_.clear();
+    std::vector<std::filesystem::path> scanDirs = { pathDownloads_, pathDocuments_, pathPictures_, pathDesktop_ };
 
-    if (isHomeView_) {
-        // Populate recent files from Downloads, Documents, Desktop
-        std::vector<std::wstring> scanRoots = { pathDownloads_, pathDocuments_, pathDesktop_ };
-        for (const auto& root : scanRoots) {
-            if (root.empty() || !std::filesystem::exists(root)) continue;
-
-            WIN32_FIND_DATAW fd;
-            std::wstring pat = root + L"\\*";
-            HANDLE hFind = FindFirstFileExW(pat.c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr, FIND_FIRST_EX_LARGE_FETCH);
-            if (hFind != INVALID_HANDLE_VALUE) {
-                int count = 0;
-                do {
-                    if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) continue;
-                    FileItemDisplay item;
-                    item.name = fd.cFileName;
-                    item.location = root;
-                    item.attributes = fd.dwFileAttributes;
-                    item.isDirectory = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-                    item.size = (static_cast<uint64_t>(fd.nFileSizeHigh) << 32) | fd.nFileSizeLow;
-                    item.mtime = (static_cast<uint64_t>(fd.ftLastWriteTime.dwHighDateTime) << 32) | fd.ftLastWriteTime.dwLowDateTime;
-
-                    size_t dotPos = item.name.rfind(L'.');
-                    if (dotPos != std::wstring::npos && !item.isDirectory) {
-                        item.extension = item.name.substr(dotPos + 1);
-                    }
-                    allItems_.push_back(std::move(item));
-                    if (++count > 15) break; // Limit recent items per folder
-                } while (FindNextFileW(hFind, &fd));
-                FindClose(hFind);
-            }
-        }
-    } else {
-        std::wstring searchPattern = (currentPath_ / L"*").wstring();
-        WIN32_FIND_DATAW fd;
-        HANDLE hFind = FindFirstFileExW(
-            searchPattern.c_str(),
-            FindExInfoBasic,
-            &fd,
-            FindExSearchNameMatch,
-            nullptr,
-            FIND_FIRST_EX_LARGE_FETCH);
-
-        if (hFind != INVALID_HANDLE_VALUE) {
-            do {
-                if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) continue;
-
+    for (const auto& dir : scanDirs) {
+        if (dir.empty() || !std::filesystem::exists(dir)) continue;
+        try {
+            int count = 0;
+            for (const auto& entry : std::filesystem::directory_iterator(dir, std::filesystem::directory_options::skip_permission_denied)) {
+                if (count++ > 6) break;
                 FileItemDisplay item;
-                item.name = fd.cFileName;
-                item.location = currentPath_.wstring();
-                item.attributes = fd.dwFileAttributes;
-                item.isDirectory = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-                item.size = (static_cast<uint64_t>(fd.nFileSizeHigh) << 32) | fd.nFileSizeLow;
-                item.mtime = (static_cast<uint64_t>(fd.ftLastWriteTime.dwHighDateTime) << 32) | fd.ftLastWriteTime.dwLowDateTime;
-
-                size_t dotPos = item.name.rfind(L'.');
-                if (dotPos != std::wstring::npos && !item.isDirectory) {
-                    item.extension = item.name.substr(dotPos + 1);
+                item.name = entry.path().filename().wstring();
+                item.location = dir.filename().wstring();
+                std::error_code ec;
+                item.isDirectory = entry.is_directory(ec);
+                if (!item.isDirectory) {
+                    item.extension = entry.path().extension().wstring();
+                    if (!item.extension.empty() && item.extension[0] == L'.') {
+                        item.extension = item.extension.substr(1);
+                    }
+                    item.size = entry.file_size(ec);
                 }
-
+                WIN32_FILE_ATTRIBUTE_DATA fad{};
+                if (GetFileAttributesExW(entry.path().c_str(), GetFileExInfoStandard, &fad)) {
+                    ULARGE_INTEGER uli;
+                    uli.LowPart = fad.ftLastWriteTime.dwLowDateTime;
+                    uli.HighPart = fad.ftLastWriteTime.dwHighDateTime;
+                    item.mtime = uli.QuadPart;
+                }
                 allItems_.push_back(std::move(item));
-            } while (FindNextFileW(hFind, &fd));
-            FindClose(hFind);
-        }
+            }
+        } catch (...) {}
     }
 
     filterAndSortItems();
@@ -891,6 +957,41 @@ void MainWindow::refresh() {
     scrollOffset_ = 0;
     updateScrollInfo();
     InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void MainWindow::navigateUp() {
+    if (isHomeView_ || currentPath_.empty()) return;
+    auto parent = currentPath_.parent_path();
+    if (!parent.empty() && parent != currentPath_) {
+        navigateTo(parent);
+    } else {
+        navigateToHome();
+    }
+}
+
+void MainWindow::navigateBack() {
+    if (!backStack_.empty()) {
+        forwardStack_.push_back(currentPath_);
+        auto prev = backStack_.back();
+        backStack_.pop_back();
+        if (prev.empty() || prev == L"Home") navigateToHome();
+        else navigateTo(prev);
+    }
+}
+
+void MainWindow::navigateForward() {
+    if (!forwardStack_.empty()) {
+        backStack_.push_back(currentPath_);
+        auto next = forwardStack_.back();
+        forwardStack_.pop_back();
+        if (next.empty() || next == L"Home") navigateToHome();
+        else navigateTo(next);
+    }
+}
+
+void MainWindow::refresh() {
+    if (isHomeView_) navigateToHome();
+    else navigateTo(currentPath_);
 }
 
 void MainWindow::filterAndSortItems() {
@@ -1072,14 +1173,16 @@ void MainWindow::copySelectedItem() {
         HGLOBAL hGlobal = GlobalAlloc(GHND, size);
         if (hGlobal) {
             auto* df = reinterpret_cast<DROPFILES*>(GlobalLock(hGlobal));
-            df->pFiles = sizeof(DROPFILES);
-            df->fWide = TRUE;
-            wchar_t* target = reinterpret_cast<wchar_t*>(reinterpret_cast<char*>(df) + sizeof(DROPFILES));
-            memcpy(target, p.c_str(), p.size() * sizeof(wchar_t));
-            target[p.size()] = L'\0';
-            target[p.size() + 1] = L'\0';
-            GlobalUnlock(hGlobal);
-            SetClipboardData(CF_HDROP, hGlobal);
+            if (df) {
+                df->pFiles = sizeof(DROPFILES);
+                df->fWide = TRUE;
+                wchar_t* target = reinterpret_cast<wchar_t*>(reinterpret_cast<char*>(df) + sizeof(DROPFILES));
+                memcpy(target, p.c_str(), p.size() * sizeof(wchar_t));
+                target[p.size()] = L'\0';
+                target[p.size() + 1] = L'\0';
+                GlobalUnlock(hGlobal);
+                SetClipboardData(CF_HDROP, hGlobal);
+            }
         }
         CloseClipboard();
     }
@@ -1111,7 +1214,6 @@ void MainWindow::pasteItem() {
 }
 
 void MainWindow::renameSelectedItem() {
-    // Basic prompt or status notice
     if (selectedRow_ < 0 || selectedRow_ >= static_cast<int>(filteredIndices_.size())) return;
 }
 
@@ -1194,7 +1296,8 @@ void MainWindow::updateScrollInfo() {
     RECT rc;
     GetClientRect(hwnd_, &rc);
     int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
-    int surfaceHeight = rc.bottom - (contentTop + (isHomeView_ ? 180 + 32 + headerHeight_ : headerHeight_) + statusBarHeight_);
+    int listTop = contentTop + (isHomeView_ ? 240 : filterBarHeight_ + headerHeight_);
+    int surfaceHeight = rc.bottom - listTop - statusBarHeight_;
     int visibleRows = std::max(1, surfaceHeight / rowHeight_);
 
     SCROLLINFO si{};
@@ -1221,107 +1324,122 @@ HICON MainWindow::getFileIcon(const std::wstring& path, bool isDir, const std::w
 }
 
 // -----------------------------------------------------------------------------
-// Rendering Subroutines (Pure Windows Dark Theme, Zero AI Slop)
+// Professional OS Designer Level Fluent UI Rendering Subroutines
 // -----------------------------------------------------------------------------
 
 void MainWindow::paintTabBar(HDC hdc, int width) {
     RECT tabAreaRc{0, 0, width, tabBarHeight_};
-    HBRUSH bgBrush = CreateSolidBrush(RGB(25, 25, 25));
+    HBRUSH bgBrush = CreateSolidBrush(RGB(24, 24, 24));
     FillRect(hdc, &tabAreaRc, bgBrush);
     DeleteObject(bgBrush);
 
-    SelectObject(hdc, fontRegular_);
     SetBkMode(hdc, TRANSPARENT);
 
-    int tabX = 10;
+    int tabX = 12;
     for (size_t i = 0; i < tabs_.size(); ++i) {
         bool isActive = (i == activeTab_);
-        RECT tabRc{tabX, 6, tabX + 160, tabBarHeight_};
+        RECT tabRc{tabX, 4, tabX + 160, tabBarHeight_};
 
-        HBRUSH tBrush = CreateSolidBrush(isActive ? RGB(45, 45, 45) : RGB(30, 30, 30));
-        FillRect(hdc, &tabRc, tBrush);
-        DeleteObject(tBrush);
+        // Tab Container with rounded top corners
+        drawRoundedRect(hdc, tabRc, 8, isActive ? RGB(36, 36, 36) : RGB(27, 27, 27),
+            isActive ? RGB(45, 45, 45) : RGB(32, 32, 32));
 
-        // Active top indicator line
+        // Active indicator line
         if (isActive) {
-            RECT indRc{tabRc.left, 6, tabRc.right, 8};
-            HBRUSH acc = CreateSolidBrush(toColorRef(tokens_.accent));
+            RECT indRc{tabRc.left + 8, tabRc.top, tabRc.right - 8, tabRc.top + 2};
+            HBRUSH acc = CreateSolidBrush(RGB(96, 205, 255));
             FillRect(hdc, &indRc, acc);
             DeleteObject(acc);
         }
 
-        SetTextColor(hdc, isActive ? RGB(255, 255, 255) : RGB(170, 170, 170));
-        RECT textRc{tabRc.left + 12, tabRc.top, tabRc.right - 25, tabRc.bottom};
+        // Tab Icon (Home vs Folder)
+        SelectObject(hdc, fontIconsSmall_);
+        SetTextColor(hdc, isActive ? RGB(96, 205, 255) : RGB(160, 160, 160));
+        RECT tabIconRc{tabRc.left + 10, tabRc.top, tabRc.left + 26, tabRc.bottom};
+        const wchar_t* iconGlyph = (tabs_[i].title == L"Home") ? L"\uE80F" : L"\uE8B7";
+        DrawTextW(hdc, iconGlyph, 1, &tabIconRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+        // Tab Title Text
+        SelectObject(hdc, fontRegular_);
+        SetTextColor(hdc, isActive ? RGB(255, 255, 255) : RGB(175, 175, 175));
+        RECT textRc{tabRc.left + 28, tabRc.top, tabRc.right - 26, tabRc.bottom};
         DrawTextW(hdc, tabs_[i].title.c_str(), -1, &textRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
-        // Close 'x'
+        // Close '×' Button
         RECT closeRc{tabRc.right - 22, tabRc.top, tabRc.right - 6, tabRc.bottom};
+        SetTextColor(hdc, RGB(140, 140, 140));
         DrawTextW(hdc, L"×", 1, &closeRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-        tabX += 165;
+        tabX += 166;
     }
 
     // New Tab (+) Button
-    RECT plusRc{tabX, 6, tabX + 28, tabBarHeight_};
-    HBRUSH plusBg = CreateSolidBrush(RGB(32, 32, 32));
-    FillRect(hdc, &plusRc, plusBg);
-    DeleteObject(plusBg);
-
+    RECT plusRc{tabX, 4, tabX + 30, tabBarHeight_};
+    drawRoundedRect(hdc, plusRc, 6, RGB(30, 30, 30), RGB(38, 38, 38));
+    SelectObject(hdc, fontIconsSmall_);
     SetTextColor(hdc, RGB(200, 200, 200));
-    DrawTextW(hdc, L"+", 1, &plusRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    DrawTextW(hdc, L"\uE710", 1, &plusRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
 void MainWindow::paintNavAndAddressBar(HDC hdc, int width) {
     int navTop = tabBarHeight_;
     RECT navRc{0, navTop, width, navTop + navBarHeight_};
-    HBRUSH navBrush = CreateSolidBrush(RGB(32, 32, 32));
+    HBRUSH navBrush = CreateSolidBrush(RGB(31, 31, 31));
     FillRect(hdc, &navRc, navBrush);
     DeleteObject(navBrush);
 
-    SelectObject(hdc, fontBold_);
     SetBkMode(hdc, TRANSPARENT);
 
-    // Nav Buttons: Back, Forward, Up, Refresh
-    auto drawBtn = [&](int x, const wchar_t* glyph) {
-        RECT rc{x, navTop + 6, x + 28, navTop + 34};
-        HBRUSH btnBg = CreateSolidBrush(RGB(42, 42, 42));
-        FillRect(hdc, &rc, btnBg);
-        DeleteObject(btnBg);
-        SetTextColor(hdc, RGB(220, 220, 220));
-        DrawTextW(hdc, glyph, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    // Vector Navigation Buttons: Back, Forward, Up, Refresh
+    auto drawNavBtn = [&](int x, const wchar_t* iconGlyph, bool enabled = true) {
+        RECT rc{x, navTop + 5, x + 30, navTop + 35};
+        drawRoundedRect(hdc, rc, 6, RGB(38, 38, 38), RGB(46, 46, 46));
+        SelectObject(hdc, fontIcons_);
+        SetTextColor(hdc, enabled ? RGB(230, 230, 230) : RGB(110, 110, 110));
+        DrawTextW(hdc, iconGlyph, 1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     };
 
-    drawBtn(10, L"←");
-    drawBtn(42, L"→");
-    drawBtn(74, L"↑");
-    drawBtn(106, L"↻");
+    drawNavBtn(12, L"\uE72B", !backStack_.empty());
+    drawNavBtn(44, L"\uE72A", !forwardStack_.empty());
+    drawNavBtn(76, L"\uE74A", !isHomeView_);
+    drawNavBtn(108, L"\uE72C", true);
 
-    // Address / Breadcrumb Bar
+    // Breadcrumbs / Address Bar Container
     int searchW = 260;
-    int searchX = width - searchW - 15;
+    int searchX = width - searchW - 20;
     int addrX = 145;
     int addrW = searchX - addrX - 15;
-    RECT addrRc{addrX, navTop + 6, addrX + addrW, navTop + 34};
+    RECT addrRc{addrX, navTop + 5, addrX + addrW, navTop + 35};
 
-    HBRUSH addrBg = CreateSolidBrush(RGB(40, 40, 40));
-    FillRect(hdc, &addrRc, addrBg);
-    DeleteObject(addrBg);
+    drawRoundedRect(hdc, addrRc, 6, RGB(41, 41, 41), RGB(58, 58, 58));
 
-    // Breadcrumbs inside Address Bar
+    // Breadcrumbs rendering inside Address Bar
     breadcrumbs_.clear();
-    int bcX = addrX + 10;
-    SelectObject(hdc, fontRegular_);
-    SetTextColor(hdc, RGB(220, 220, 220));
+    int bcX = addrX + 12;
 
     if (isHomeView_) {
-        RECT bcRc{bcX, addrRc.top, bcX + 60, addrRc.bottom};
-        DrawTextW(hdc, L"🏠 Home", -1, &bcRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        breadcrumbs_.push_back({ L"Home", L"godxplr://home", bcRc });
+        // Home icon + label
+        SelectObject(hdc, fontIconsSmall_);
+        SetTextColor(hdc, RGB(96, 205, 255));
+        RECT homeIconRc{bcX, addrRc.top, bcX + 18, addrRc.bottom};
+        DrawTextW(hdc, L"\uE80F", 1, &homeIconRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        bcX += 20;
+
+        SelectObject(hdc, fontRegular_);
+        SetTextColor(hdc, RGB(240, 240, 240));
+        RECT homeTextRc{bcX, addrRc.top, bcX + 50, addrRc.bottom};
+        DrawTextW(hdc, L"Home", 4, &homeTextRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+        RECT fullHomeRc{addrX + 12, addrRc.top, bcX + 50, addrRc.bottom};
+        breadcrumbs_.push_back({ L"Home", L"godxplr://home", fullHomeRc });
     } else {
-        RECT homeRc{bcX, addrRc.top, bcX + 22, addrRc.bottom};
-        DrawTextW(hdc, L"🏠", 1, &homeRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        breadcrumbs_.push_back({ L"Home", L"godxplr://home", homeRc });
-        bcX += 26;
+        // Home Icon
+        SelectObject(hdc, fontIconsSmall_);
+        SetTextColor(hdc, RGB(96, 205, 255));
+        RECT homeIconRc{bcX, addrRc.top, bcX + 18, addrRc.bottom};
+        DrawTextW(hdc, L"\uE80F", 1, &homeIconRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        breadcrumbs_.push_back({ L"Home", L"godxplr://home", homeIconRc });
+        bcX += 22;
 
         std::filesystem::path buildPath;
         for (const auto& part : currentPath_) {
@@ -1329,144 +1447,252 @@ void MainWindow::paintNavAndAddressBar(HDC hdc, int width) {
             std::wstring partStr = part.wstring();
             if (partStr.back() == L'\\') partStr.pop_back();
 
-            RECT chevRc{bcX, addrRc.top, bcX + 14, addrRc.bottom};
+            // Chevron separator
+            SelectObject(hdc, fontIconsSmall_);
             SetTextColor(hdc, RGB(140, 140, 140));
-            DrawTextW(hdc, L">", 1, &chevRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-            bcX += 16;
+            RECT chevRc{bcX, addrRc.top, bcX + 12, addrRc.bottom};
+            DrawTextW(hdc, L"\uE76C", 1, &chevRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            bcX += 14;
 
-            RECT pRc{bcX, addrRc.top, bcX + static_cast<int>(partStr.size() * 8 + 8), addrRc.bottom};
-            SetTextColor(hdc, RGB(230, 230, 230));
+            // Part label
+            SelectObject(hdc, fontRegular_);
+            SetTextColor(hdc, RGB(235, 235, 235));
+            int strPixelW = static_cast<int>(partStr.size() * 8 + 10);
+            RECT pRc{bcX, addrRc.top, bcX + strPixelW, addrRc.bottom};
             DrawTextW(hdc, partStr.c_str(), -1, &pRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             breadcrumbs_.push_back({ partStr, buildPath.wstring(), pRc });
             bcX = pRc.right;
         }
     }
 
-    // Search Box Placeholder icon
+    // Search Box Container
+    RECT searchRc{searchX, navTop + 5, searchX + searchW, navTop + 35};
+    drawRoundedRect(hdc, searchRc, 6, RGB(41, 41, 41), RGB(58, 58, 58));
+
+    // Magnifier Icon inside search box
+    SelectObject(hdc, fontIconsSmall_);
     SetTextColor(hdc, RGB(160, 160, 160));
-    RECT searchIconRc{searchX - 25, addrRc.top, searchX, addrRc.bottom};
-    DrawTextW(hdc, L"🔍", 1, &searchIconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    RECT sIconRc{searchX + 8, searchRc.top, searchX + 26, searchRc.bottom};
+    DrawTextW(hdc, L"\uE721", 1, &sIconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    // Placeholder text if edit box is empty
+    wchar_t searchBuf[64]{};
+    GetWindowTextW(editSearch_, searchBuf, 64);
+    if (wcslen(searchBuf) == 0) {
+        SelectObject(hdc, fontRegular_);
+        SetTextColor(hdc, RGB(130, 130, 130));
+        RECT phRc{searchX + 32, searchRc.top, searchX + searchW - 10, searchRc.bottom};
+        std::wstring phText = isHomeView_ ? L"Search Home" : (L"Search " + currentPath_.filename().wstring());
+        DrawTextW(hdc, phText.c_str(), -1, &phRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    }
 }
 
 void MainWindow::paintCommandBar(HDC hdc, int width) {
     int cmdTop = tabBarHeight_ + navBarHeight_;
     int cmdBottom = cmdTop + commandBarHeight_;
     RECT cmdRc{0, cmdTop, width, cmdBottom};
-    HBRUSH cmdBrush = CreateSolidBrush(RGB(32, 32, 32));
+    HBRUSH cmdBrush = CreateSolidBrush(RGB(31, 31, 31));
     FillRect(hdc, &cmdRc, cmdBrush);
     DeleteObject(cmdBrush);
 
-    SelectObject(hdc, fontRegular_);
     SetBkMode(hdc, TRANSPARENT);
 
-    // 1. "+ New ▾" Button
-    RECT newRc{10, cmdTop + 6, 90, cmdTop + 38};
-    HBRUSH newBg = CreateSolidBrush(RGB(45, 45, 45));
-    FillRect(hdc, &newRc, newBg);
-    DeleteObject(newBg);
+    // 1. "+ New ▾" Button (Look at user image 2!)
+    RECT newRc{12, cmdTop + 5, 96, cmdTop + 35};
+    drawRoundedRect(hdc, newRc, 6, RGB(38, 38, 38), RGB(50, 50, 50));
+
+    SelectObject(hdc, fontIconsSmall_);
+    SetTextColor(hdc, RGB(96, 205, 255));
+    RECT newPlusRc{newRc.left + 8, newRc.top, newRc.left + 24, newRc.bottom};
+    DrawTextW(hdc, L"\uE710", 1, &newPlusRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    SelectObject(hdc, fontRegular_);
     SetTextColor(hdc, RGB(255, 255, 255));
-    DrawTextW(hdc, L"+ New ▾", -1, &newRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    RECT newTextRc{newRc.left + 26, newRc.top, newRc.right - 18, newRc.bottom};
+    DrawTextW(hdc, L"New", 3, &newTextRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-    // Divider
-    HPEN divPen = CreatePen(PS_SOLID, 1, RGB(55, 55, 55));
+    SelectObject(hdc, fontIconsSmall_);
+    SetTextColor(hdc, RGB(160, 160, 160));
+    RECT newChevRc{newRc.right - 18, newRc.top, newRc.right - 6, newRc.bottom};
+    DrawTextW(hdc, L"\uE70D", 1, &newChevRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    // Hairline vertical divider 1
+    HPEN divPen = CreatePen(PS_SOLID, 1, RGB(52, 52, 52));
     SelectObject(hdc, divPen);
-    MoveToEx(hdc, 96, cmdTop + 10, nullptr);
-    LineTo(hdc, 96, cmdTop + 34);
+    MoveToEx(hdc, 102, cmdTop + 8, nullptr);
+    LineTo(hdc, 102, cmdTop + 32);
 
-    // Action Icons: Cut, Copy, Paste, Rename, Delete
-    auto drawActionBtn = [&](int x, int w, const wchar_t* glyph) {
-        RECT rc{x, cmdTop + 6, x + w, cmdTop + 38};
-        SetTextColor(hdc, RGB(200, 200, 200));
-        DrawTextW(hdc, glyph, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    // Action Buttons: Cut, Copy, Paste, Rename, Share, Delete (Image 2 Parity)
+    auto drawActionBtn = [&](int x, const wchar_t* iconGlyph, COLORREF iconTint = RGB(210, 210, 210)) {
+        RECT rc{x, cmdTop + 5, x + 34, cmdTop + 35};
+        SelectObject(hdc, fontIcons_);
+        SetTextColor(hdc, iconTint);
+        DrawTextW(hdc, iconGlyph, 1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     };
 
-    drawActionBtn(102, 30, L"✂");
-    drawActionBtn(136, 30, L"📄");
-    drawActionBtn(170, 30, L"📋");
-    drawActionBtn(204, 30, L"🏷");
-    drawActionBtn(238, 30, L"🗑");
+    drawActionBtn(106, L"\uE8C6");                     // Cut (scissors)
+    drawActionBtn(144, L"\uE8C8", RGB(96, 205, 255));   // Copy (two sheets with subtle cyan accent)
+    drawActionBtn(182, L"\uE77F");                     // Paste (clipboard)
+    drawActionBtn(220, L"\uE8AC");                     // Rename (sheet with cursor / 'A')
+    drawActionBtn(258, L"\uE72D");                     // Share (sheet with arrow out)
+    drawActionBtn(296, L"\uE74D");                     // Delete (trash can)
 
-    // Divider
-    MoveToEx(hdc, 276, cmdTop + 10, nullptr);
-    LineTo(hdc, 276, cmdTop + 34);
+    // Hairline vertical divider 2
+    MoveToEx(hdc, 335, cmdTop + 8, nullptr);
+    LineTo(hdc, 335, cmdTop + 32);
 
-    // Dropdowns: Sort ▾, View ▾, Filter ▾
-    auto drawDropdownBtn = [&](int x, int w, const wchar_t* label) {
-        RECT rc{x, cmdTop + 6, x + w, cmdTop + 38};
-        HBRUSH bg = CreateSolidBrush(RGB(42, 42, 42));
-        FillRect(hdc, &rc, bg);
-        DeleteObject(bg);
-        SetTextColor(hdc, RGB(220, 220, 220));
-        DrawTextW(hdc, label, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    // Dropdown Buttons: Sort ▾, View ▾, Filter ▾
+    auto drawDropdownBtn = [&](int x, int w, const wchar_t* iconGlyph, const wchar_t* labelText) {
+        RECT rc{x, cmdTop + 5, x + w, cmdTop + 35};
+        drawRoundedRect(hdc, rc, 6, RGB(36, 36, 36), RGB(46, 46, 46));
+
+        SelectObject(hdc, fontIconsSmall_);
+        SetTextColor(hdc, RGB(96, 205, 255));
+        RECT iRc{rc.left + 8, rc.top, rc.left + 24, rc.bottom};
+        DrawTextW(hdc, iconGlyph, 1, &iRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        SelectObject(hdc, fontRegular_);
+        SetTextColor(hdc, RGB(230, 230, 230));
+        RECT tRc{rc.left + 26, rc.top, rc.right - 18, rc.bottom};
+        DrawTextW(hdc, labelText, -1, &tRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+        SelectObject(hdc, fontIconsSmall_);
+        SetTextColor(hdc, RGB(160, 160, 160));
+        RECT cRc{rc.right - 18, rc.top, rc.right - 6, rc.bottom};
+        DrawTextW(hdc, L"\uE70D", 1, &cRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     };
 
-    drawDropdownBtn(285, 75, L"⇅ Sort ▾");
-    drawDropdownBtn(365, 75, L"⊞ View ▾");
+    drawDropdownBtn(342, 80, L"\uE8CB", L"Sort");
+    drawDropdownBtn(428, 80, L"\uE8A9", L"View");
 
-    // Filter Dropdown with active filter label
-    std::wstring filterLabel = L"⚚ Filter ▾";
-    if (filterCategory_ != FilterCategory::All) filterLabel = L"⚚ Filtered ▾";
-    drawDropdownBtn(445, 95, filterLabel.c_str());
+    std::wstring filterLabel = (filterCategory_ == FilterCategory::All) ? L"Filter" : L"Filtered";
+    drawDropdownBtn(514, 90, L"\uE71C", filterLabel.c_str());
+
+    // More options '...'
+    RECT moreRc{610, cmdTop + 5, 642, cmdTop + 35};
+    SelectObject(hdc, fontIconsSmall_);
+    SetTextColor(hdc, RGB(180, 180, 180));
+    DrawTextW(hdc, L"\uE712", 1, &moreRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    // Details button on far right
+    RECT detRc{width - 95, cmdTop + 5, width - 15, cmdTop + 35};
+    drawRoundedRect(hdc, detRc, 6, RGB(36, 36, 36), RGB(46, 46, 46));
+    SelectObject(hdc, fontIconsSmall_);
+    SetTextColor(hdc, RGB(96, 205, 255));
+    RECT detIconRc{detRc.left + 8, detRc.top, detRc.left + 24, detRc.bottom};
+    DrawTextW(hdc, L"\uE9F9", 1, &detIconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    SelectObject(hdc, fontRegular_);
+    SetTextColor(hdc, RGB(230, 230, 230));
+    RECT detTextRc{detRc.left + 26, detRc.top, detRc.right - 6, detRc.bottom};
+    DrawTextW(hdc, L"Details", 7, &detTextRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
     DeleteObject(divPen);
 
-    // Bottom Border for Command Ribbon
-    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(48, 48, 48));
+    // Hairline bottom border
+    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(44, 44, 44));
     SelectObject(hdc, borderPen);
     MoveToEx(hdc, 0, cmdBottom - 1, nullptr);
     LineTo(hdc, width, cmdBottom - 1);
     DeleteObject(borderPen);
 }
 
+void MainWindow::paintFilterPills(HDC hdc, int width, int topY) {
+    RECT barRc{sidebarWidth_, topY, width, topY + filterBarHeight_};
+    HBRUSH bg = CreateSolidBrush(RGB(24, 24, 24));
+    FillRect(hdc, &barRc, bg);
+    DeleteObject(bg);
+
+    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(38, 38, 38));
+    SelectObject(hdc, borderPen);
+    MoveToEx(hdc, sidebarWidth_, topY + filterBarHeight_ - 1, nullptr);
+    LineTo(hdc, width, topY + filterBarHeight_ - 1);
+    DeleteObject(borderPen);
+
+    SetBkMode(hdc, TRANSPARENT);
+
+    int pillX = sidebarWidth_ + 14;
+    for (size_t i = 0; i < filterPills_.size(); ++i) {
+        auto& pill = filterPills_[i];
+        bool isActive = (pill.cat == filterCategory_);
+        bool isHover = (static_cast<int>(i) == hoverPill_);
+
+        int pillW = static_cast<int>(pill.label.size() * 8 + 38);
+        pill.rect = RECT{pillX, topY + 4, pillX + pillW, topY + filterBarHeight_ - 4};
+
+        COLORREF fillCol = isActive ? RGB(27, 50, 72) : (isHover ? RGB(45, 45, 45) : RGB(33, 33, 33));
+        COLORREF borderCol = isActive ? RGB(96, 205, 255) : (isHover ? RGB(65, 65, 65) : RGB(48, 48, 48));
+        drawRoundedRect(hdc, pill.rect, 12, fillCol, borderCol);
+
+        // Icon
+        SelectObject(hdc, fontIconsSmall_);
+        SetTextColor(hdc, isActive ? RGB(96, 205, 255) : (isHover ? RGB(255, 255, 255) : RGB(170, 170, 170)));
+        RECT iRc{pill.rect.left + 8, pill.rect.top, pill.rect.left + 22, pill.rect.bottom};
+        DrawTextW(hdc, pill.iconGlyph.c_str(), 1, &iRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        // Label
+        SelectObject(hdc, fontRegular_);
+        SetTextColor(hdc, isActive ? RGB(96, 205, 255) : (isHover ? RGB(255, 255, 255) : RGB(200, 200, 200)));
+        RECT tRc{pill.rect.left + 24, pill.rect.top, pill.rect.right - 8, pill.rect.bottom};
+        DrawTextW(hdc, pill.label.c_str(), -1, &tRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+        pillX += pillW + 8;
+    }
+}
+
 void MainWindow::paintSidebar(HDC hdc, int height) {
     int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
     RECT sideRc{0, contentTop, sidebarWidth_, height - statusBarHeight_};
-    HBRUSH bgBrush = CreateSolidBrush(RGB(28, 28, 28));
+    HBRUSH bgBrush = CreateSolidBrush(RGB(24, 24, 24));
     FillRect(hdc, &sideRc, bgBrush);
     DeleteObject(bgBrush);
 
-    SelectObject(hdc, fontRegular_);
     SetBkMode(hdc, TRANSPARENT);
 
-    int itemY = contentTop + 10;
+    int itemY = contentTop + 8;
     for (size_t i = 0; i < sidebarItems_.size(); ++i) {
         const auto& item = sidebarItems_[i];
-        RECT rowRc{6, itemY, sidebarWidth_ - 6, itemY + 28};
 
+        if (item.isHeader) {
+            RECT headerRc{14, itemY + 4, sidebarWidth_ - 14, itemY + 20};
+            SelectObject(hdc, fontSmall_);
+            SetTextColor(hdc, RGB(120, 120, 120));
+            DrawTextW(hdc, item.name.c_str(), -1, &headerRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+            itemY += 22;
+            continue;
+        }
+
+        RECT rowRc{6, itemY, sidebarWidth_ - 6, itemY + 30};
         bool isSel = (static_cast<int>(i) == sidebarSelectedIndex_);
         bool isHov = (static_cast<int>(i) == sidebarHoverIndex_);
 
         if (isSel) {
-            HBRUSH selBg = CreateSolidBrush(RGB(50, 50, 50));
-            FillRect(hdc, &rowRc, selBg);
-            DeleteObject(selBg);
-
-            // Left accent pill
-            RECT pill{rowRc.left, rowRc.top + 4, rowRc.left + 3, rowRc.bottom - 4};
-            HBRUSH acc = CreateSolidBrush(toColorRef(tokens_.accent));
+            drawRoundedRect(hdc, rowRc, 6, RGB(37, 37, 37), RGB(48, 48, 48));
+            // Left Accent Pill
+            RECT pill{rowRc.left + 1, rowRc.top + 6, rowRc.left + 4, rowRc.bottom - 6};
+            HBRUSH acc = CreateSolidBrush(RGB(96, 205, 255));
             FillRect(hdc, &pill, acc);
             DeleteObject(acc);
         } else if (isHov) {
-            HBRUSH hovBg = CreateSolidBrush(RGB(38, 38, 38));
-            FillRect(hdc, &rowRc, hovBg);
-            DeleteObject(hovBg);
+            drawRoundedRect(hdc, rowRc, 6, RGB(32, 32, 32), RGB(40, 40, 40));
         }
 
-        // Draw Icon glyph
-        RECT iconRc{rowRc.left + 8, rowRc.top, rowRc.left + 28, rowRc.bottom};
-        SetTextColor(hdc, RGB(255, 204, 0));
-        DrawTextW(hdc, item.iconGlyph.c_str(), -1, &iconRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        // Draw Vector Icon with authentic color
+        SelectObject(hdc, fontIcons_);
+        SetTextColor(hdc, item.iconColor);
+        RECT iconRc{rowRc.left + 10, rowRc.top, rowRc.left + 30, rowRc.bottom};
+        DrawTextW(hdc, item.iconGlyph.c_str(), 1, &iconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-        // Draw Item Name
-        SetTextColor(hdc, isSel ? RGB(255, 255, 255) : RGB(220, 220, 220));
-        RECT textRc{rowRc.left + 32, rowRc.top, rowRc.right - 8, rowRc.bottom};
-        DrawTextW(hdc, item.name.c_str(), -1, &textRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        // Draw Name
+        SelectObject(hdc, fontRegular_);
+        SetTextColor(hdc, isSel ? RGB(255, 255, 255) : (isHov ? RGB(245, 245, 245) : RGB(215, 215, 215)));
+        RECT textRc{rowRc.left + 36, rowRc.top, rowRc.right - 10, rowRc.bottom};
+        DrawTextW(hdc, item.name.c_str(), -1, &textRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
 
-        itemY += 32;
+        itemY += 30;
     }
 
-    // Right border for Sidebar
-    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(45, 45, 45));
+    // Right hairline border for Sidebar
+    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(40, 40, 40));
     SelectObject(hdc, borderPen);
     MoveToEx(hdc, sidebarWidth_ - 1, contentTop, nullptr);
     LineTo(hdc, sidebarWidth_ - 1, height - statusBarHeight_);
@@ -1474,81 +1700,126 @@ void MainWindow::paintSidebar(HDC hdc, int height) {
 }
 
 void MainWindow::paintHomeView(HDC hdc, int width, int height) {
-    (void)width;
     int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
     int surfaceLeft = sidebarWidth_;
 
     SetBkMode(hdc, TRANSPARENT);
 
-    // Section 1: "Quick access" Title
-    RECT titleRc{surfaceLeft + 20, contentTop + 12, surfaceLeft + 200, contentTop + 36};
+    // Section 1: "v Quick access" Title (Look at user image 1!)
+    RECT titleChevRc{surfaceLeft + 16, contentTop + 14, surfaceLeft + 30, contentTop + 36};
+    SelectObject(hdc, fontIconsSmall_);
+    SetTextColor(hdc, RGB(180, 180, 180));
+    DrawTextW(hdc, L"\uE70D", 1, &titleChevRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    RECT titleRc{surfaceLeft + 34, contentTop + 14, surfaceLeft + 250, contentTop + 36};
     SelectObject(hdc, fontTitle_);
     SetTextColor(hdc, RGB(255, 255, 255));
     DrawTextW(hdc, L"Quick access", -1, &titleRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-    // Render Quick Cards (Grid of cards)
-    int cardW = 180;
-    int cardH = 62;
-    int cardStartX = surfaceLeft + 20;
-    int cardStartY = contentTop + 45;
+    // Render Quick Cards (Grid of cards matching user image 1)
+    int cardW = 190;
+    int cardH = 54;
+    int cardStartX = surfaceLeft + 16;
+    int cardStartY = contentTop + 44;
 
-    SelectObject(hdc, fontBold_);
     for (size_t i = 0; i < quickCards_.size(); ++i) {
         int col = static_cast<int>(i % 4);
         int row = static_cast<int>(i / 4);
-        int cx = cardStartX + col * (cardW + 16);
-        int cy = cardStartY + row * (cardH + 12);
+        int cx = cardStartX + col * (cardW + 14);
+        int cy = cardStartY + row * (cardH + 10);
         if (cx + cardW > width - 10) continue;
 
         quickCards_[i].rect = RECT{cx, cy, cx + cardW, cy + cardH};
 
         bool isHov = (static_cast<int>(i) == hoverCard_);
-        HBRUSH cardBrush = CreateSolidBrush(isHov ? RGB(48, 48, 48) : RGB(38, 38, 38));
-        FillRect(hdc, &quickCards_[i].rect, cardBrush);
-        DeleteObject(cardBrush);
+        COLORREF cardBg = isHov ? RGB(42, 42, 42) : RGB(33, 33, 33);
+        COLORREF cardBorder = isHov ? RGB(60, 60, 60) : RGB(46, 46, 46);
+        drawRoundedRect(hdc, quickCards_[i].rect, 8, cardBg, cardBorder);
 
-        // Icon
-        RECT iconRc{cx + 10, cy + 12, cx + 42, cy + 44};
-        SetTextColor(hdc, RGB(255, 204, 0));
-        DrawTextW(hdc, quickCards_[i].iconGlyph.c_str(), -1, &iconRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        // Icon Badge Container
+        RECT badgeRc{cx + 8, cy + 9, cx + 44, cy + 45};
+        drawRoundedRect(hdc, badgeRc, 6, RGB(38, 38, 38), RGB(48, 48, 48));
+
+        // Vibrant Icon Glyph
+        SelectObject(hdc, fontIcons_);
+        SetTextColor(hdc, quickCards_[i].badgeColor);
+        DrawTextW(hdc, quickCards_[i].iconGlyph.c_str(), 1, &badgeRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
         // Name
         SelectObject(hdc, fontBold_);
         SetTextColor(hdc, RGB(255, 255, 255));
-        RECT nameRc{cx + 42, cy + 10, cx + cardW - 6, cy + 30};
-        DrawTextW(hdc, quickCards_[i].name.c_str(), -1, &nameRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        RECT nameRc{cx + 50, cy + 9, cx + cardW - 24, cy + 27};
+        DrawTextW(hdc, quickCards_[i].name.c_str(), -1, &nameRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
 
-        // Subtext ("Stored locally")
+        // Subtext (e.g. "Stored locally")
         SelectObject(hdc, fontSmall_);
-        SetTextColor(hdc, RGB(150, 150, 150));
-        RECT subRc{cx + 42, cy + 30, cx + cardW - 6, cy + 50};
-        DrawTextW(hdc, quickCards_[i].subtext.c_str(), -1, &subRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        SetTextColor(hdc, RGB(140, 140, 140));
+        RECT subRc{cx + 50, cy + 28, cx + cardW - 24, cy + 45};
+        DrawTextW(hdc, quickCards_[i].subtext.c_str(), -1, &subRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+
+        // Small Pin Icon at bottom-right
+        SelectObject(hdc, fontIconsSmall_);
+        SetTextColor(hdc, RGB(110, 110, 110));
+        RECT pinRc{cx + cardW - 22, cy + 28, cx + cardW - 6, cy + 45};
+        DrawTextW(hdc, L"\uE718", 1, &pinRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 
-    // Section 2: "Recent" Header & Pill tabs
-    int recentTop = contentTop + 180;
-    RECT recentTitleRc{surfaceLeft + 20, recentTop, surfaceLeft + 120, recentTop + 28};
-    SelectObject(hdc, fontTitle_);
-    SetTextColor(hdc, RGB(255, 255, 255));
-    DrawTextW(hdc, L"Recent", -1, &recentTitleRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    // Section 2: Section Tabs (Recent, Favorites, Shared - matching user image 1)
+    int recentTop = contentTop + 172;
+    RECT recentChevRc{surfaceLeft + 16, recentTop + 2, surfaceLeft + 30, recentTop + 26};
+    SelectObject(hdc, fontIconsSmall_);
+    SetTextColor(hdc, RGB(180, 180, 180));
+    DrawTextW(hdc, L"\uE70D", 1, &recentChevRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-    // Table Headers for Recent List
-    int tableHeaderTop = recentTop + 32;
+    int pillX = surfaceLeft + 36;
+    auto drawSectionPill = [&](RECT& outRc, const wchar_t* iconGlyph, const wchar_t* text, bool isSelected) {
+        int w = static_cast<int>(wcslen(text) * 8 + 36);
+        outRc = RECT{pillX, recentTop, pillX + w, recentTop + 26};
+
+        COLORREF fillCol = isSelected ? RGB(45, 35, 52) : RGB(28, 28, 28);
+        COLORREF borderCol = isSelected ? RGB(227, 0, 140) : RGB(48, 48, 48);
+        drawRoundedRect(hdc, outRc, 13, fillCol, borderCol);
+
+        SelectObject(hdc, fontIconsSmall_);
+        SetTextColor(hdc, isSelected ? RGB(255, 255, 255) : RGB(160, 160, 160));
+        RECT iRc{outRc.left + 8, outRc.top, outRc.left + 22, outRc.bottom};
+        DrawTextW(hdc, iconGlyph, 1, &iRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        SelectObject(hdc, fontRegular_);
+        SetTextColor(hdc, isSelected ? RGB(255, 255, 255) : RGB(180, 180, 180));
+        RECT tRc{outRc.left + 24, outRc.top, outRc.right - 8, outRc.bottom};
+        DrawTextW(hdc, text, -1, &tRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+        pillX += w + 8;
+    };
+
+    drawSectionPill(pillRecentRc_, L"\uE823", L"Recent", homeSection_ == 0);
+    drawSectionPill(pillFavRc_, L"\uE734", L"Favorites", homeSection_ == 1);
+    drawSectionPill(pillSharedRc_, L"\uE716", L"Shared", homeSection_ == 2);
+
+    // Section 3: Recent Items Table Headers
+    int tableHeaderTop = recentTop + 36;
     RECT hdrRc{surfaceLeft, tableHeaderTop, width, tableHeaderTop + headerHeight_};
-    HBRUSH hdrBrush = CreateSolidBrush(RGB(30, 30, 30));
+    HBRUSH hdrBrush = CreateSolidBrush(RGB(26, 26, 26));
     FillRect(hdc, &hdrRc, hdrBrush);
     DeleteObject(hdrBrush);
 
     SelectObject(hdc, fontSmall_);
-    SetTextColor(hdc, RGB(160, 160, 160));
+    SetTextColor(hdc, RGB(130, 130, 130));
 
-    RECT colNameRc{surfaceLeft + 30, tableHeaderTop, surfaceLeft + 30 + colNameWidth_, tableHeaderTop + headerHeight_};
+    RECT colNameRc{surfaceLeft + 36, tableHeaderTop, surfaceLeft + 36 + colNameWidth_, tableHeaderTop + headerHeight_};
     RECT colDateRc{colNameRc.right, tableHeaderTop, colNameRc.right + colDateWidth_, tableHeaderTop + headerHeight_};
     RECT colLocRc{colDateRc.right, tableHeaderTop, width - 20, tableHeaderTop + headerHeight_};
 
     DrawTextW(hdc, L"NAME", 4, &colNameRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     DrawTextW(hdc, L"DATE ACCESSED", 13, &colDateRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     DrawTextW(hdc, L"FILE LOCATION", 13, &colLocRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(40, 40, 40));
+    SelectObject(hdc, borderPen);
+    MoveToEx(hdc, surfaceLeft, tableHeaderTop + headerHeight_ - 1, nullptr);
+    LineTo(hdc, width, tableHeaderTop + headerHeight_ - 1);
+    DeleteObject(borderPen);
 
     // Rows
     int rowY = tableHeaderTop + headerHeight_;
@@ -1561,47 +1832,43 @@ void MainWindow::paintHomeView(HDC hdc, int width, int height) {
         if (r >= static_cast<int>(filteredIndices_.size())) break;
 
         const auto& item = allItems_[filteredIndices_[r]];
-        RECT rowRc{surfaceLeft, rowY + i * rowHeight_, width, rowY + (i + 1) * rowHeight_};
+        RECT rowRc{surfaceLeft + 4, rowY + i * rowHeight_, width - 8, rowY + (i + 1) * rowHeight_};
 
         bool isSel = (r == selectedRow_);
         bool isHov = (r == hoverRow_);
 
         if (isSel) {
-            HBRUSH sel = CreateSolidBrush(RGB(45, 65, 88));
-            FillRect(hdc, &rowRc, sel);
-            DeleteObject(sel);
-
-            RECT pill{rowRc.left, rowRc.top, rowRc.left + 3, rowRc.bottom};
-            HBRUSH acc = CreateSolidBrush(toColorRef(tokens_.accent));
+            drawRoundedRect(hdc, rowRc, 6, RGB(30, 51, 71), RGB(40, 68, 95));
+            // Left Accent Pill
+            RECT pill{rowRc.left + 1, rowRc.top + 4, rowRc.left + 4, rowRc.bottom - 4};
+            HBRUSH acc = CreateSolidBrush(RGB(96, 205, 255));
             FillRect(hdc, &pill, acc);
             DeleteObject(acc);
         } else if (isHov) {
-            HBRUSH hov = CreateSolidBrush(RGB(35, 35, 35));
-            FillRect(hdc, &rowRc, hov);
-            DeleteObject(hov);
+            drawRoundedRect(hdc, rowRc, 6, RGB(36, 36, 36), RGB(44, 44, 44));
         }
 
-        // Icon
+        // Real Shell Icon
         HICON hIcon = getFileIcon(item.name, item.isDirectory, item.extension);
         if (hIcon) {
-            DrawIconEx(hdc, surfaceLeft + 8, rowRc.top + 6, hIcon, 16, 16, 0, nullptr, DI_NORMAL);
+            DrawIconEx(hdc, surfaceLeft + 12, rowRc.top + 7, hIcon, 16, 16, 0, nullptr, DI_NORMAL);
             DestroyIcon(hIcon);
         }
 
-        // Name
+        // File Name
         SetTextColor(hdc, RGB(255, 255, 255));
-        RECT nameCell{surfaceLeft + 32, rowRc.top, surfaceLeft + 32 + colNameWidth_ - 10, rowRc.bottom};
-        DrawTextW(hdc, item.name.c_str(), -1, &nameCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        RECT nameCell{surfaceLeft + 36, rowRc.top, surfaceLeft + 36 + colNameWidth_ - 10, rowRc.bottom};
+        DrawTextW(hdc, item.name.c_str(), -1, &nameCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
 
-        // Date
-        SetTextColor(hdc, RGB(160, 160, 160));
+        // Date Accessed
+        SetTextColor(hdc, RGB(150, 150, 150));
         RECT dateCell{colNameRc.right, rowRc.top, colNameRc.right + colDateWidth_, rowRc.bottom};
         std::wstring dt = formatTime(item.mtime);
         DrawTextW(hdc, dt.c_str(), -1, &dateCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-        // Location
+        // File Location
         RECT locCell{colDateRc.right, rowRc.top, width - 20, rowRc.bottom};
-        DrawTextW(hdc, item.location.c_str(), -1, &locCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        DrawTextW(hdc, item.location.c_str(), -1, &locCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
     }
 }
 
@@ -1611,19 +1878,23 @@ void MainWindow::paintDirectoryView(HDC hdc, int width, int height) {
 
     SetBkMode(hdc, TRANSPARENT);
 
-    // Column Headers (Interactive sorting!)
-    RECT hdrRc{surfaceLeft, contentTop, width, contentTop + headerHeight_};
-    HBRUSH hdrBrush = CreateSolidBrush(RGB(32, 32, 32));
+    // 1. Instant 1-Click Quick Filter Bar
+    paintFilterPills(hdc, width, contentTop);
+
+    // 2. Interactive Column Headers (with Sort Arrows)
+    int tableHeaderTop = contentTop + filterBarHeight_;
+    RECT hdrRc{surfaceLeft, tableHeaderTop, width, tableHeaderTop + headerHeight_};
+    HBRUSH hdrBrush = CreateSolidBrush(RGB(26, 26, 26));
     FillRect(hdc, &hdrRc, hdrBrush);
     DeleteObject(hdrBrush);
 
     SelectObject(hdc, fontSmall_);
-    SetTextColor(hdc, RGB(160, 160, 160));
+    SetTextColor(hdc, RGB(140, 140, 140));
 
-    RECT colNameRc{surfaceLeft + 32, contentTop, surfaceLeft + 32 + colNameWidth_, contentTop + headerHeight_};
-    RECT colDateRc{colNameRc.right, contentTop, colNameRc.right + colDateWidth_, contentTop + headerHeight_};
-    RECT colTypeRc{colDateRc.right, contentTop, colDateRc.right + colTypeWidth_, contentTop + headerHeight_};
-    RECT colSizeRc{colTypeRc.right, contentTop, colTypeRc.right + colSizeWidth_, contentTop + headerHeight_};
+    RECT colNameRc{surfaceLeft + 36, tableHeaderTop, surfaceLeft + 36 + colNameWidth_, tableHeaderTop + headerHeight_};
+    RECT colDateRc{colNameRc.right, tableHeaderTop, colNameRc.right + colDateWidth_, tableHeaderTop + headerHeight_};
+    RECT colTypeRc{colDateRc.right, tableHeaderTop, colDateRc.right + colTypeWidth_, tableHeaderTop + headerHeight_};
+    RECT colSizeRc{colTypeRc.right, tableHeaderTop, colTypeRc.right + colSizeWidth_, tableHeaderTop + headerHeight_};
 
     std::wstring nameHdr = L"NAME" + std::wstring(sortCol_ == SortColumn::Name ? (sortAscending_ ? L" ▲" : L" ▼") : L"");
     std::wstring dateHdr = L"DATE MODIFIED" + std::wstring(sortCol_ == SortColumn::DateModified ? (sortAscending_ ? L" ▲" : L" ▼") : L"");
@@ -1635,14 +1906,14 @@ void MainWindow::paintDirectoryView(HDC hdc, int width, int height) {
     DrawTextW(hdc, typeHdr.c_str(), -1, &colTypeRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     DrawTextW(hdc, sizeHdr.c_str(), -1, &colSizeRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
 
-    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(45, 45, 45));
+    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(40, 40, 40));
     SelectObject(hdc, borderPen);
-    MoveToEx(hdc, surfaceLeft, contentTop + headerHeight_ - 1, nullptr);
-    LineTo(hdc, width, contentTop + headerHeight_ - 1);
+    MoveToEx(hdc, surfaceLeft, tableHeaderTop + headerHeight_ - 1, nullptr);
+    LineTo(hdc, width, tableHeaderTop + headerHeight_ - 1);
     DeleteObject(borderPen);
 
-    // Rows
-    int rowY = contentTop + headerHeight_;
+    // 3. File Rows
+    int rowY = tableHeaderTop + headerHeight_;
     int surfaceBottom = height - statusBarHeight_;
     int visibleRows = (surfaceBottom - rowY) / rowHeight_ + 2;
 
@@ -1652,50 +1923,46 @@ void MainWindow::paintDirectoryView(HDC hdc, int width, int height) {
         if (r >= static_cast<int>(filteredIndices_.size())) break;
 
         const auto& item = allItems_[filteredIndices_[r]];
-        RECT rowRc{surfaceLeft, rowY + i * rowHeight_, width, rowY + (i + 1) * rowHeight_};
+        RECT rowRc{surfaceLeft + 4, rowY + i * rowHeight_, width - 8, rowY + (i + 1) * rowHeight_};
 
         bool isSel = (r == selectedRow_);
         bool isHov = (r == hoverRow_);
 
         if (isSel) {
-            HBRUSH sel = CreateSolidBrush(RGB(45, 65, 88));
-            FillRect(hdc, &rowRc, sel);
-            DeleteObject(sel);
-
-            RECT pill{rowRc.left, rowRc.top, rowRc.left + 3, rowRc.bottom};
-            HBRUSH acc = CreateSolidBrush(toColorRef(tokens_.accent));
+            drawRoundedRect(hdc, rowRc, 6, RGB(30, 51, 71), RGB(40, 68, 95));
+            // Left Accent Pill
+            RECT pill{rowRc.left + 1, rowRc.top + 4, rowRc.left + 4, rowRc.bottom - 4};
+            HBRUSH acc = CreateSolidBrush(RGB(96, 205, 255));
             FillRect(hdc, &pill, acc);
             DeleteObject(acc);
         } else if (isHov) {
-            HBRUSH hov = CreateSolidBrush(RGB(35, 35, 35));
-            FillRect(hdc, &rowRc, hov);
-            DeleteObject(hov);
+            drawRoundedRect(hdc, rowRc, 6, RGB(36, 36, 36), RGB(44, 44, 44));
         }
 
         // Real Windows Shell File Icon
         HICON hIcon = getFileIcon(item.name, item.isDirectory, item.extension);
         if (hIcon) {
-            DrawIconEx(hdc, surfaceLeft + 8, rowRc.top + 7, hIcon, 16, 16, 0, nullptr, DI_NORMAL);
+            DrawIconEx(hdc, surfaceLeft + 12, rowRc.top + 7, hIcon, 16, 16, 0, nullptr, DI_NORMAL);
             DestroyIcon(hIcon);
         }
 
-        // Name
+        // File Name
         SetTextColor(hdc, RGB(255, 255, 255));
-        RECT nameCell{surfaceLeft + 32, rowRc.top, surfaceLeft + 32 + colNameWidth_ - 10, rowRc.bottom};
-        DrawTextW(hdc, item.name.c_str(), -1, &nameCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        RECT nameCell{surfaceLeft + 36, rowRc.top, surfaceLeft + 36 + colNameWidth_ - 10, rowRc.bottom};
+        DrawTextW(hdc, item.name.c_str(), -1, &nameCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
 
         // Date Modified
-        SetTextColor(hdc, RGB(160, 160, 160));
+        SetTextColor(hdc, RGB(150, 150, 150));
         RECT dateCell{colNameRc.right, rowRc.top, colNameRc.right + colDateWidth_, rowRc.bottom};
         std::wstring dt = formatTime(item.mtime);
         DrawTextW(hdc, dt.c_str(), -1, &dateCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-        // Type
+        // File Type
         RECT typeCell{colDateRc.right, rowRc.top, colDateRc.right + colTypeWidth_, rowRc.bottom};
         std::wstring typeStr = item.isDirectory ? L"File folder" : (item.extension.empty() ? L"File" : item.extension + L" File");
         DrawTextW(hdc, typeStr.c_str(), -1, &typeCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-        // Size
+        // File Size
         RECT sizeCell{colTypeRc.right, rowRc.top, colTypeRc.right + colSizeWidth_, rowRc.bottom};
         std::wstring sz = item.isDirectory ? L"" : formatSize(item.size);
         DrawTextW(hdc, sz.c_str(), -1, &sizeCell, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
@@ -1704,18 +1971,18 @@ void MainWindow::paintDirectoryView(HDC hdc, int width, int height) {
 
 void MainWindow::paintStatusBar(HDC hdc, int width, int height) {
     RECT statusRc{0, height - statusBarHeight_, width, height};
-    HBRUSH bg = CreateSolidBrush(RGB(28, 28, 28));
+    HBRUSH bg = CreateSolidBrush(RGB(24, 24, 24));
     FillRect(hdc, &statusRc, bg);
     DeleteObject(bg);
 
-    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(45, 45, 45));
+    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(38, 38, 38));
     SelectObject(hdc, borderPen);
     MoveToEx(hdc, 0, height - statusBarHeight_, nullptr);
     LineTo(hdc, width, height - statusBarHeight_);
     DeleteObject(borderPen);
 
     SelectObject(hdc, fontSmall_);
-    SetTextColor(hdc, RGB(180, 180, 180));
+    SetTextColor(hdc, RGB(170, 170, 170));
     SetBkMode(hdc, TRANSPARENT);
 
     wchar_t statusBuf[256];
@@ -1738,13 +2005,13 @@ void MainWindow::onPaint(HDC hdc) {
     int width = clientRc.right;
     int height = clientRc.bottom;
 
-    // Double-buffered rendering
+    // Double-buffered rendering to prevent any flicker
     HDC memDC = CreateCompatibleDC(hdc);
     HBITMAP memBmp = CreateCompatibleBitmap(hdc, width, height);
     HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, memBmp);
 
-    // Root background
-    HBRUSH bgBrush = CreateSolidBrush(RGB(24, 24, 24));
+    // Deep Dark Canvas Background (RGB 22, 22, 22)
+    HBRUSH bgBrush = CreateSolidBrush(RGB(22, 22, 22));
     FillRect(memDC, &clientRc, bgBrush);
     DeleteObject(bgBrush);
 
@@ -1754,13 +2021,13 @@ void MainWindow::onPaint(HDC hdc) {
     // 2. Navigation & Address Bar
     paintNavAndAddressBar(memDC, width);
 
-    // 3. Command Bar / Ribbon (User Image 2!)
+    // 3. Command Bar / Ribbon (Windows 11 Parity)
     paintCommandBar(memDC, width);
 
-    // 4. Sidebar (User Image 1!)
+    // 4. Sidebar (Favorites, Quick Access, Drives)
     paintSidebar(memDC, height);
 
-    // 5. Main Content Area (Home View vs Directory View)
+    // 5. Main Surface (Home View vs Directory View)
     if (isHomeView_) {
         paintHomeView(memDC, width, height);
     } else {
@@ -1770,7 +2037,7 @@ void MainWindow::onPaint(HDC hdc) {
     // 6. Status Bar
     paintStatusBar(memDC, width, height);
 
-    // Blit to screen
+    // Blit to screen DC
     BitBlt(hdc, 0, 0, width, height, memDC, 0, 0, SRCCOPY);
 
     SelectObject(memDC, oldBmp);
