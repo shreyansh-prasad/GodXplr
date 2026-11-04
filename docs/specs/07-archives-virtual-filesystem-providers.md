@@ -73,3 +73,4 @@ public:
    - Reads Local File Header (`0x04034b50`).
    - Supports Stored (Method 0) and Deflate (Method 8).
    - Verifies CRC32 upon extraction completion.
+

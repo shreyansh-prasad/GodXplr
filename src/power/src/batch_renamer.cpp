@@ -144,3 +144,4 @@ BatchRenamePlan BatchRenamer::generatePlan(
 }
 
 } // namespace gx::power
+

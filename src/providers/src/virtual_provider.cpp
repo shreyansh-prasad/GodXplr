@@ -63,3 +63,4 @@ std::wstring PathSanitizer::sanitizeRelativePath(const std::string& path) {
 }
 
 } // namespace gx::providers
+

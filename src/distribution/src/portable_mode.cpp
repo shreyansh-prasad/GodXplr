@@ -41,3 +41,4 @@ std::filesystem::path PortableMode::getLogDirectory(const std::filesystem::path&
 }
 
 } // namespace gx::distribution
+

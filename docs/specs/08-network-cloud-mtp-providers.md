@@ -44,3 +44,4 @@ public:
 - If `fileAttributes & (FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS | FILE_ATTRIBUTE_RECALL_ON_OPEN | FILE_ATTRIBUTE_OFFLINE)`:
   - File is deemed **Dehydrated**.
   - Background extractors **must skip** opening this file.
+

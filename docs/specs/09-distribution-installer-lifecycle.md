@@ -59,3 +59,4 @@ Spec 09 governs the packaging, installation, update verification, service lifecy
 - Portable mode path redirection tested with synthetic sentinel.
 - Update verifier validates checksum matching and rejects corrupted payloads.
 - Service status query and argument formatting verified under standard privileges.
+

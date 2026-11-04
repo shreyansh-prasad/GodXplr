@@ -49,3 +49,4 @@ Add provider adapters while preserving local-first behavior and strictly avoidin
 - [x] UNC path checking and disconnected share detection verified.
 - [x] Zero compilation warnings under `/W4 /WX /arch:AVX2 /permissive-`.
 - [x] 24/24 CTests pass 100% on Windows hardware.
+

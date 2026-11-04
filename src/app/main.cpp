@@ -56,3 +56,4 @@ int WINAPI wWinMain(
     CoUninitialize();
     return static_cast<int>(msg.wParam);
 }
+

@@ -127,3 +127,4 @@ void showFileProperties(HWND hwndParent, const std::wstring& filePath) {
 2. `ShellDragDrop`: `CF_HDROP` buffer generator and drop-effect calculator.
 3. `ShellProperties`: Native properties dialog invoker.
 4. Unit and integration tests in `tests/unit/platform/shell_integration_tests.cpp`.
+

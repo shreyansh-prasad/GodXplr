@@ -42,3 +42,4 @@ GodXplr is architected with a strict separation between **Platform-Neutral Domai
    - Filesystem enumeration, network probes, and virtual archive traversal implement `IVirtualProvider`.
 3. **Graceful Fallbacks:**
    - On non-NTFS volumes or non-Windows hosts, the engine transparently falls back to `DirectoryCrawler` without raising exceptions or terminating.
+

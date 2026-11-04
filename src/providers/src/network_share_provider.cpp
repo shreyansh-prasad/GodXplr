@@ -35,3 +35,4 @@ NetworkShareStatus NetworkShareProvider::checkShareConnectivity(
 }
 
 } // namespace gx::providers
+

@@ -59,3 +59,4 @@
 ### 3.2 Action Planning
 - Generates action plan (`CopyLeftToRight`, `CopyRightToLeft`, `DeleteLeft`, `DeleteRight`, `Skip`).
 - Requires explicit user confirmation of the planned actions before execution.
+

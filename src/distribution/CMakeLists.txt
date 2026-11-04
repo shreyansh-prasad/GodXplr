@@ -24,3 +24,4 @@ target_link_libraries(godxplr-distribution
 )
 
 target_compile_features(godxplr-distribution PUBLIC cxx_std_20)
+

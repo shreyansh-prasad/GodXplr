@@ -20,3 +20,4 @@ GodXplr is designed as a Windows-first high-performance file manager, but its co
 
 ## Approver
 Lead OS & Architecture Lead (Antigravity Senior OS Developer)
+

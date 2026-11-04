@@ -95,3 +95,4 @@ DragDropEffect ShellDragDrop::calculateDropEffect(
 }
 
 } // namespace gx::platform
+

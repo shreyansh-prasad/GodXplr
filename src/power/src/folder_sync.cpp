@@ -143,3 +143,4 @@ SyncPlan FolderSync::compareFolders(
 }
 
 } // namespace gx::power
+

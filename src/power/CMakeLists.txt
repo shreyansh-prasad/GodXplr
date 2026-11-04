@@ -18,3 +18,4 @@ target_link_libraries(godxplr-power
 )
 
 target_compile_features(godxplr-power PUBLIC cxx_std_20)
+

@@ -189,3 +189,4 @@ bool ServiceController::uninstallService(const std::wstring& serviceName) {
 }
 
 } // namespace gx::distribution
+

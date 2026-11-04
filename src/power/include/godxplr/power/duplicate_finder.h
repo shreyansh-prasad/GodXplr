@@ -45,3 +45,4 @@ public:
 };
 
 } // namespace gx::power
+

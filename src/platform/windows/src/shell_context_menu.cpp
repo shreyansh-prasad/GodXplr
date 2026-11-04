@@ -149,3 +149,4 @@ bool ShellContextMenu::showAndInvoke(HWND hwndParent, int x, int y) {
 }
 
 } // namespace gx::platform
+

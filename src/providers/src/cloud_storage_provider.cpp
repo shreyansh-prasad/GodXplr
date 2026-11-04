@@ -38,3 +38,4 @@ CloudSyncState CloudStorageProvider::queryFileCloudState(const std::wstring& fil
 }
 
 } // namespace gx::providers
+

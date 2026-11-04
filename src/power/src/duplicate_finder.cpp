@@ -170,3 +170,4 @@ std::vector<DuplicateGroup> DuplicateFinder::findDuplicates(
 }
 
 } // namespace gx::power
+

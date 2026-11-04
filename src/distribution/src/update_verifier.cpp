@@ -121,3 +121,4 @@ bool UpdateVerifier::cleanStagedUpdate(const std::filesystem::path& targetDir) {
 }
 
 } // namespace gx::distribution
+

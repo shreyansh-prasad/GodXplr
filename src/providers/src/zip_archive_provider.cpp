@@ -184,3 +184,4 @@ bool ZipArchiveProvider::extractItem(const std::wstring& relativePath, const std
 }
 
 } // namespace gx::providers
+
