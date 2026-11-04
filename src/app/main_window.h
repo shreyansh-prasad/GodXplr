@@ -244,6 +244,7 @@ private:
     std::vector<FilterPill> filterPills_;
     int hoverPill_{-1};
     bool addressEditActive_{false};
+    bool searchIsPlaceholder_{true};
 
     std::vector<QuickCard> quickCards_;
     int homeSection_{0}; // 0: Recent, 1: Favorites, 2: Shared
@@ -258,25 +259,25 @@ private:
     int scrollOffset_{0};
 
     // Layout Dimensions (Modern, Spacious Visual Hierarchy)
-    int tabBarHeight_{36};
-    int navBarHeight_{42};
-    int commandBarHeight_{42};
-    int filterBarHeight_{34};
-    int headerHeight_{30};
-    int rowHeight_{32};
-    int statusBarHeight_{28};
-    int sidebarWidth_{240};
-    int detailsPaneWidth_{280};
-    int previewPaneWidth_{320};
+    int tabBarHeight_{42};
+    int navBarHeight_{50};
+    int commandBarHeight_{48};
+    int filterBarHeight_{40};
+    int headerHeight_{34};
+    int rowHeight_{40};
+    int statusBarHeight_{32};
+    int sidebarWidth_{270};
+    int detailsPaneWidth_{320};
+    int previewPaneWidth_{380};
 
     // Column Widths
-    int colNameWidth_{350};
-    int colDateWidth_{160};
-    int colTypeWidth_{130};
-    int colSizeWidth_{100};
-    int colLocWidth_{200};
-    int colAccountWidth_{120};
-    int colActivityWidth_{100};
+    int colNameWidth_{380};
+    int colDateWidth_{180};
+    int colTypeWidth_{140};
+    int colSizeWidth_{110};
+    int colLocWidth_{220};
+    int colAccountWidth_{130};
+    int colActivityWidth_{110};
 
     // Modes & Toggles
     ViewMode viewMode_{ViewMode::Details};
