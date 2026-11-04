@@ -20,6 +20,7 @@ target_link_libraries(godxplr
         godxplr-core
         comctl32
         uxtheme
+        dwmapi
         shell32
         ole32
         oleaut32
