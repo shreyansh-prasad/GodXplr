@@ -78,6 +78,8 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 - `docs/reports/P05-completion.md` (DirectoryStore, VirtualSelectionModel, DetailsLayout O(1) math)
 - `docs/reports/P06-completion.md` (Async directory pipeline, bounded mailbox, generations and sort)
 - `docs/reports/P07-completion.md` (Sidebar, lazy tree model, List/Grid/Gallery layouts, keyboard navigation)
+- `docs/reports/P08-completion.md` (Icons, thumbnails, previews, extraction pipeline)
+- `apple_preview_and_photo_gallery.md` (Photo Thumbnail Gallery Grid View, Apple Glassmorphic Live Hover Preview Panel, View Dropdown Menu)
 
 ## 5. How to update this file
 
