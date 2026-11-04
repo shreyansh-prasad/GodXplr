@@ -66,6 +66,7 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | P17 | Installer, update/rollback and default opener | PASS | `docs/reports/P17-completion.md` (Commit `ac1b5aa`) |
 | P18 | Cross-platform CI/portability validation | PASS | `docs/reports/P18-completion.md` (27/27 CTests pass) |
 | P19 | Fluent UI Overhaul & 1-Click Self-Filtering Engine | PASS | Windows 11 Fluent vector icons, 1-click Quick Filter Pills, live window validated (28/28 CTests pass, commit `59049db`) |
+| P20 | Windows 11 Fluent Full Parity & Navigation Engine | PASS | Tiles view layout, Details & Preview panes, 12 Quick Access cards in 4x3 grid, Expandable directory tree in sidebar, Item check boxes, Extensions & Hidden toggles, ShellExecute file opener verified (28/28 CTests pass, commit `c7a1fb1`) |
 
 ## 4. Completed phase reports
 
