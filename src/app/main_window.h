@@ -51,7 +51,9 @@ enum class FilterCategory {
     Pictures,
     AudioVideo,
     Compressed,
-    Code
+    Code,
+    LargeFiles,
+    ModifiedToday
 };
 
 enum class DateFilter {
@@ -162,6 +164,7 @@ private:
     void paintFilterPills(HDC hdc, int width, int topY);
     void paintSidebar(HDC hdc, int height);
     void paintHomeView(HDC hdc, int width, int height);
+    void paintThisPcView(HDC hdc, int width, int height);
     void paintDirectoryView(HDC hdc, int width, int height);
     void paintTilesView(HDC hdc, int width, int height);
     void paintLargeIconsView(HDC hdc, int width, int height, bool isLarge = true);
@@ -173,6 +176,7 @@ private:
     // Navigation & Operations
     void navigateTo(const std::filesystem::path& path);
     void navigateToHome();
+    void navigateToThisPc();
     void navigateUp();
     void navigateBack();
     void navigateForward();
@@ -245,6 +249,7 @@ private:
 
     std::filesystem::path currentPath_;
     bool isHomeView_{true};
+    bool isThisPcView_{false};
 
     std::vector<TabInfo> tabs_;
     size_t activeTab_{0};
@@ -278,6 +283,31 @@ private:
     RECT pillRecentRc_{};
     RECT pillFavRc_{};
     RECT pillSharedRc_{};
+
+    struct DriveCardItem {
+        std::wstring root;
+        std::wstring label;
+        std::wstring fileSystem;
+        uint64_t totalBytes{0};
+        uint64_t freeBytes{0};
+        RECT rect{};
+    };
+    std::vector<DriveCardItem> thisPcDrives_;
+
+    struct MaintenanceToolItem {
+        std::wstring title;
+        std::wstring desc;
+        std::wstring glyph;
+        COLORREF color;
+        int cmdId;
+        RECT rect{};
+    };
+    std::vector<MaintenanceToolItem> thisPcTools_;
+    std::vector<QuickCard> thisPcFolderCards_;
+
+    RECT statusViewDetailsRc_{};
+    RECT statusViewTilesRc_{};
+    RECT statusViewLargeRc_{};
 
     int selectedRow_{-1};
     int hoverRow_{-1};

@@ -89,6 +89,12 @@ constexpr UINT_PTR kCmdSelectAll = 3083;
 constexpr UINT_PTR kCmdInvertSelect = 3084;
 constexpr UINT_PTR kCmdClearSelect = 3085;
 constexpr UINT_PTR kCmdProperties = 3086;
+constexpr UINT_PTR kCmdDiskCleanup = 3090;
+constexpr UINT_PTR kCmdStorageSettings = 3091;
+constexpr UINT_PTR kCmdEmptyRecycleBin = 3092;
+constexpr UINT_PTR kCmdOpenPowershell = 3093;
+constexpr UINT_PTR kCmdFilterLargeFiles = 3094;
+constexpr UINT_PTR kCmdFilterToday = 3095;
 
 COLORREF toColorRef(const ui::ColorRgba& c) {
     return RGB(c.r, c.g, c.b);
@@ -637,6 +643,8 @@ void MainWindow::initFilterPills() {
     filterPills_.push_back({ FilterCategory::AudioVideo, L"Media", L"\uE714", {} });
     filterPills_.push_back({ FilterCategory::Compressed, L"Archives", L"\uF133", {} });
     filterPills_.push_back({ FilterCategory::Code, L"Code", L"\uE943", {} });
+    filterPills_.push_back({ FilterCategory::LargeFiles, L"Large (>100MB)", L"\uE945", {} });
+    filterPills_.push_back({ FilterCategory::ModifiedToday, L"Today", L"\uE823", {} });
 }
 
 void MainWindow::initSidebar() {
@@ -1078,6 +1086,27 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 ShellExecuteExW(&sei);
             }
             break;
+
+        case kCmdDiskCleanup:
+            ShellExecuteW(hwnd_, L"open", L"cleanmgr.exe", L"/lowdisk", nullptr, SW_SHOWNORMAL);
+            break;
+        case kCmdStorageSettings:
+            ShellExecuteW(hwnd_, L"open", L"ms-settings:storagesense", nullptr, nullptr, SW_SHOWNORMAL);
+            break;
+        case kCmdEmptyRecycleBin:
+            SHEmptyRecycleBinW(hwnd_, nullptr, 0);
+            break;
+        case kCmdOpenPowershell: {
+            std::wstring loc = (isHomeView_ || isThisPcView_ || currentPath_.empty()) ? L"C:\\" : currentPath_.wstring();
+            ShellExecuteW(hwnd_, L"open", L"powershell.exe", (L"-NoExit -Command \"Set-Location '" + loc + L"'\"").c_str(), nullptr, SW_SHOWNORMAL);
+            break;
+        }
+        case kCmdFilterLargeFiles:
+            setFilterCategory(FilterCategory::LargeFiles);
+            break;
+        case kCmdFilterToday:
+            setFilterCategory(FilterCategory::ModifiedToday);
+            break;
         }
         return 0;
     }
@@ -1138,6 +1167,8 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
             const auto& item = sidebarItems_[wParam];
             if (item.path == L"godxplr://home") {
                 navigateToHome();
+            } else if (item.path == L"godxplr://thispc") {
+                navigateToThisPc();
             } else if (std::filesystem::exists(item.path)) {
                 navigateTo(std::filesystem::path(item.path));
             }
@@ -1148,6 +1179,10 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
         selectedRow_ = static_cast<int>(wParam);
         InvalidateRect(hwnd_, nullptr, FALSE);
         UpdateWindow(hwnd_);
+        return 0;
+
+    case WM_USER + 112: // Navigate to This PC
+        navigateToThisPc();
         return 0;
 
     case WM_USER + 111: // Set search query (wParam: 0 = clear, 1 = Batman: Arkham Knight, 2 = Arkham, 3 = BATMANARK, 4 = Dark Knight, 5 = knight, 6 = Batman Arkham Trilogy)
@@ -1442,9 +1477,21 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
         for (size_t i = 0; i < tabs_.size(); ++i) {
             RECT tabRc{tabX, 4, tabX + 180, tabBarHeight_};
             if (x >= tabRc.left && x < tabRc.right) {
+                // If clicked close '×' button
+                if (x >= tabRc.right - 24 && x < tabRc.right - 6 && tabs_.size() > 1) {
+                    tabs_.erase(tabs_.begin() + i);
+                    if (activeTab_ >= tabs_.size()) activeTab_ = tabs_.size() - 1;
+                    if (tabs_[activeTab_].path == L"godxplr://home") navigateToHome();
+                    else if (tabs_[activeTab_].path == L"godxplr://thispc") navigateToThisPc();
+                    else navigateTo(std::filesystem::path(tabs_[activeTab_].path));
+                    InvalidateRect(hwnd_, nullptr, FALSE);
+                    return;
+                }
                 activeTab_ = i;
                 if (tabs_[i].path == L"godxplr://home") {
                     navigateToHome();
+                } else if (tabs_[i].path == L"godxplr://thispc") {
+                    navigateToThisPc();
                 } else {
                     navigateTo(std::filesystem::path(tabs_[i].path));
                 }
@@ -1482,7 +1529,7 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
             // Search Clear button (✕)
             if (x >= searchX + searchW - 52 && x < searchX + searchW - 32) {
                 searchIsPlaceholder_ = true;
-                std::wstring ph = isHomeView_ ? L"Search Home" : (L"Search " + (currentPath_.filename().empty() ? currentPath_.wstring() : currentPath_.filename().wstring()));
+                std::wstring ph = isThisPcView_ ? L"Search This PC" : (isHomeView_ ? L"Search Home" : (L"Search " + (currentPath_.filename().empty() ? currentPath_.wstring() : currentPath_.filename().wstring())));
                 SetWindowTextW(editSearch_, ph.c_str());
                 InvalidateRect(editSearch_, nullptr, TRUE);
                 onSearchChanged();
@@ -1493,6 +1540,7 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
             for (const auto& bc : breadcrumbs_) {
                 if (PtInRect(&bc.rect, POINT{x, y})) {
                     if (bc.path == L"godxplr://home") navigateToHome();
+                    else if (bc.path == L"godxplr://thispc") navigateToThisPc();
                     else navigateTo(std::filesystem::path(bc.path));
                     return;
                 }
@@ -1564,6 +1612,8 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
                     const auto& item = sidebarItems_[i];
                     if (item.path == L"godxplr://home") {
                         navigateToHome();
+                    } else if (item.path == L"godxplr://thispc") {
+                        navigateToThisPc();
                     } else if (item.path == L"shell:RecycleBinFolder") {
                         ShellExecuteW(hwnd_, L"open", L"shell:RecycleBinFolder", nullptr, nullptr, SW_SHOWNORMAL);
                     } else if (std::filesystem::exists(item.path)) {
@@ -1689,6 +1739,60 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
         }
     }
 
+    // 8b. This PC View Clicks (Drives, Folders, and Maintenance Tools)
+    if (isThisPcView_ && x >= sidebarWidth_) {
+        // Drive Cards
+        for (const auto& drive : thisPcDrives_) {
+            if (PtInRect(&drive.rect, POINT{x, y})) {
+                navigateTo(drive.root);
+                return;
+            }
+        }
+        // Folder Cards
+        for (const auto& folder : thisPcFolderCards_) {
+            if (PtInRect(&folder.rect, POINT{x, y})) {
+                navigateTo(folder.path);
+                return;
+            }
+        }
+        // Maintenance Tool Cards
+        for (const auto& tool : thisPcTools_) {
+            if (PtInRect(&tool.rect, POINT{x, y})) {
+                if (tool.cmdId == static_cast<int>(kCmdFilterLargeFiles)) {
+                    navigateTo(L"C:\\");
+                    setFilterCategory(FilterCategory::LargeFiles);
+                } else {
+                    SendMessageW(hwnd_, WM_COMMAND, MAKEWPARAM(tool.cmdId, 0), 0);
+                }
+                return;
+            }
+        }
+        return;
+    }
+
+    // 8c. Status Bar View Mode Switcher Buttons Clicks
+    if (y >= clientRc.bottom - statusBarHeight_) {
+        if (PtInRect(&statusViewDetailsRc_, POINT{x, y})) {
+            viewMode_ = ViewMode::Details;
+            scrollOffset_ = 0;
+            updateScrollInfo();
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        } else if (PtInRect(&statusViewTilesRc_, POINT{x, y})) {
+            viewMode_ = ViewMode::Tiles;
+            scrollOffset_ = 0;
+            updateScrollInfo();
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        } else if (PtInRect(&statusViewLargeRc_, POINT{x, y})) {
+            viewMode_ = ViewMode::LargeIcons;
+            scrollOffset_ = 0;
+            updateScrollInfo();
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        }
+    }
+
     // 9. File List / Grid Cards Click & Double-Click (File Execution)
     if ((!isHomeView_ || isSearching_) && (viewMode_ == ViewMode::LargeIcons || viewMode_ == ViewMode::MediumIcons || viewMode_ == ViewMode::Tiles)) {
         int cardW = (viewMode_ == ViewMode::Tiles) ? 300 : (viewMode_ == ViewMode::LargeIcons ? 164 : 124);
@@ -1792,6 +1896,93 @@ void MainWindow::onRButtonUp(int x, int y) {
 }
 
 void MainWindow::onKeyDown(WPARAM key) {
+    bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
+
+    if (ctrl) {
+        if (key == 'T') {
+            if (shift) {
+                std::wstring loc = (isHomeView_ || isThisPcView_ || currentPath_.empty()) ? L"C:\\" : currentPath_.wstring();
+                ShellExecuteW(hwnd_, L"open", L"powershell.exe", (L"-NoExit -Command \"Set-Location '" + loc + L"'\"").c_str(), nullptr, SW_SHOWNORMAL);
+            } else {
+                tabs_.push_back({ L"Home", L"godxplr://home" });
+                activeTab_ = tabs_.size() - 1;
+                navigateToHome();
+                InvalidateRect(hwnd_, nullptr, FALSE);
+            }
+            return;
+        } else if (key == 'W') {
+            if (tabs_.size() > 1) {
+                tabs_.erase(tabs_.begin() + activeTab_);
+                if (activeTab_ >= tabs_.size()) activeTab_ = tabs_.size() - 1;
+                if (tabs_[activeTab_].path == L"godxplr://home") navigateToHome();
+                else if (tabs_[activeTab_].path == L"godxplr://thispc") navigateToThisPc();
+                else navigateTo(std::filesystem::path(tabs_[activeTab_].path));
+                InvalidateRect(hwnd_, nullptr, FALSE);
+            }
+            return;
+        } else if (key == 'C') {
+            if (selectedRow_ >= 0 && selectedRow_ < static_cast<int>(filteredIndices_.size())) {
+                const auto& item = allItems_[filteredIndices_[selectedRow_]];
+                std::wstring fullPath = isHomeView_
+                    ? (std::filesystem::path(item.location) / item.name).wstring()
+                    : (currentPath_ / item.name).wstring();
+                copyTextToClipboard(fullPath);
+            } else if (!currentPath_.empty()) {
+                copyTextToClipboard(currentPath_.wstring());
+            }
+            return;
+        } else if (key == 'A') {
+            checkedRows_.assign(allItems_.size(), true);
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        } else if (key == 'F') {
+            SetFocus(editSearch_);
+            SendMessageW(editSearch_, EM_SETSEL, 0, -1);
+            return;
+        } else if (key == 'L') {
+            addressEditActive_ = true;
+            SetWindowTextW(editAddress_, currentPath_.c_str());
+            ShowWindow(editAddress_, SW_SHOW);
+            SetFocus(editAddress_);
+            SendMessageW(editAddress_, EM_SETSEL, 0, -1);
+            return;
+        } else if (key == 'N' && shift) {
+            createNewFolder();
+            return;
+        } else if (key == '1') {
+            viewMode_ = ViewMode::Details; InvalidateRect(hwnd_, nullptr, FALSE); return;
+        } else if (key == '2') {
+            viewMode_ = ViewMode::Tiles; InvalidateRect(hwnd_, nullptr, FALSE); return;
+        } else if (key == '3') {
+            viewMode_ = ViewMode::LargeIcons; InvalidateRect(hwnd_, nullptr, FALSE); return;
+        }
+    }
+
+    if (alt) {
+        if (key == VK_RETURN) {
+            SendMessageW(hwnd_, WM_COMMAND, MAKEWPARAM(kCmdProperties, 0), 0);
+            return;
+        } else if (key == VK_LEFT) {
+            navigateBack();
+            return;
+        } else if (key == VK_RIGHT) {
+            navigateForward();
+            return;
+        } else if (key == VK_UP) {
+            navigateUp();
+            return;
+        } else if (key == 'D') {
+            addressEditActive_ = true;
+            SetWindowTextW(editAddress_, currentPath_.c_str());
+            ShowWindow(editAddress_, SW_SHOW);
+            SetFocus(editAddress_);
+            SendMessageW(editAddress_, EM_SETSEL, 0, -1);
+            return;
+        }
+    }
+
     int count = static_cast<int>(filteredIndices_.size());
 
     switch (key) {
@@ -1924,6 +2115,15 @@ void MainWindow::onSearchChanged() {
 }
 
 void MainWindow::navigateTo(const std::filesystem::path& path) {
+    if (path == L"godxplr://thispc") {
+        navigateToThisPc();
+        return;
+    }
+    if (path == L"godxplr://home") {
+        navigateToHome();
+        return;
+    }
+
     std::error_code ec;
     if (!std::filesystem::exists(path, ec) || !std::filesystem::is_directory(path, ec)) {
         return;
@@ -1938,6 +2138,7 @@ void MainWindow::navigateTo(const std::filesystem::path& path) {
     if (ec) currentPath_ = path;
 
     isHomeView_ = false;
+    isThisPcView_ = false;
     if (searchIsPlaceholder_) {
         std::wstring ph = L"Search " + (currentPath_.filename().empty() ? currentPath_.wstring() : currentPath_.filename().wstring());
         SetWindowTextW(editSearch_, ph.c_str());
@@ -2001,8 +2202,45 @@ void MainWindow::navigateTo(const std::filesystem::path& path) {
     }
 }
 
+void MainWindow::navigateToThisPc() {
+    isHomeView_ = false;
+    isThisPcView_ = true;
+    isSearching_ = false;
+    currentSearchQuery_.clear();
+    hasExactSearchMatches_ = false;
+    fuzzySuggestion_.clear();
+    searchIsPlaceholder_ = true;
+
+    if (!currentPath_.empty() && currentPath_ != L"godxplr://thispc") {
+        backStack_.push_back(currentPath_);
+        forwardStack_.clear();
+    }
+    currentPath_ = L"godxplr://thispc";
+
+    SetWindowTextW(editSearch_, L"Search This PC");
+    InvalidateRect(editSearch_, nullptr, TRUE);
+
+    if (activeTab_ < tabs_.size()) {
+        tabs_[activeTab_].title = L"This PC";
+        tabs_[activeTab_].path = L"godxplr://thispc";
+    }
+
+    allItems_.clear();
+    folderItems_.clear();
+    filteredIndices_.clear();
+    selectedRow_ = -1;
+    scrollOffset_ = 0;
+    updateScrollInfo();
+    InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
 void MainWindow::navigateToHome() {
     isHomeView_ = true;
+    isThisPcView_ = false;
+    isSearching_ = false;
+    currentSearchQuery_.clear();
+    hasExactSearchMatches_ = false;
+    fuzzySuggestion_.clear();
     currentPath_.clear();
     if (searchIsPlaceholder_) {
         SetWindowTextW(editSearch_, L"Search Home");
@@ -2376,6 +2614,12 @@ void MainWindow::filterAndSortItems() {
             break;
         case FilterCategory::Code:
             if (item.isDirectory || (ext != L"cpp" && ext != L"h" && ext != L"c" && ext != L"py" && ext != L"js" && ext != L"ts" && ext != L"json" && ext != L"xml" && ext != L"html" && ext != L"rs" && ext != L"cs")) continue;
+            break;
+        case FilterCategory::LargeFiles:
+            if (item.isDirectory || item.size < 100ULL * 1024 * 1024) continue;
+            break;
+        case FilterCategory::ModifiedToday:
+            if (item.mtime == 0 || curUli.QuadPart < item.mtime || (curUli.QuadPart - item.mtime) > oneDay100ns) continue;
             break;
         case FilterCategory::All:
         default:
@@ -2775,6 +3019,10 @@ void MainWindow::showMoreMenu(int x, int y) {
     AppendMenuW(hMenu, MF_STRING, kCmdClearSelect, L"Clear selection");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(hMenu, MF_STRING, kCmdProperties, L"Properties\tAlt+Enter");
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(hMenu, MF_STRING, kCmdDiskCleanup, L"⚡ Disk Cleanup (cleanmgr)");
+    AppendMenuW(hMenu, MF_STRING, kCmdStorageSettings, L"📊 Windows Storage Settings");
+    AppendMenuW(hMenu, MF_STRING, kCmdEmptyRecycleBin, L"🗑 Empty Recycle Bin");
 
     POINT pt{x, y};
     ClientToScreen(hwnd_, &pt);
@@ -2909,7 +3157,7 @@ void MainWindow::paintNavAndAddressBar(HDC hdc, int width) {
 
     drawNavBtn(12, L"\uE72B", !backStack_.empty());
     drawNavBtn(50, L"\uE72A", !forwardStack_.empty());
-    drawNavBtn(88, L"\uE74A", !isHomeView_);
+    drawNavBtn(88, L"\uE74A", (!isHomeView_ && !isThisPcView_));
     drawNavBtn(126, L"\uE72C", true);
 
     int rightMargin = (showDetailsPane_ ? detailsPaneWidth_ : (showPreviewPane_ ? previewPaneWidth_ : 0));
@@ -2926,7 +3174,21 @@ void MainWindow::paintNavAndAddressBar(HDC hdc, int width) {
     breadcrumbs_.clear();
     int bcX = addrX + 12;
 
-    if (isHomeView_) {
+    if (isThisPcView_) {
+        SelectObject(hdc, fontIconsSmall_);
+        SetTextColor(hdc, RGB(96, 205, 255));
+        RECT pcIconRc{bcX, addrRc.top, bcX + 20, addrRc.bottom};
+        DrawTextW(hdc, L"\uE7F4", 1, &pcIconRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        bcX += 22;
+
+        SelectObject(hdc, fontRegular_);
+        SetTextColor(hdc, RGB(240, 240, 240));
+        RECT pcTextRc{bcX, addrRc.top, bcX + 64, addrRc.bottom};
+        DrawTextW(hdc, L"This PC", 7, &pcTextRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+        RECT fullPcRc{addrX + 12, addrRc.top, bcX + 64, addrRc.bottom};
+        breadcrumbs_.push_back({ L"This PC", L"godxplr://thispc", fullPcRc });
+    } else if (isHomeView_) {
         SelectObject(hdc, fontIconsSmall_);
         SetTextColor(hdc, RGB(96, 205, 255));
         RECT homeIconRc{bcX, addrRc.top, bcX + 20, addrRc.bottom};
@@ -3255,11 +3517,34 @@ void MainWindow::paintSidebar(HDC hdc, int height) {
         RECT iconRc{indentX + 22, rowRc.top, indentX + 46, rowRc.bottom};
         DrawTextW(hdc, item.iconGlyph.c_str(), 1, &iconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-        // Name
-        SelectObject(hdc, fontRegular_);
-        SetTextColor(hdc, isSel ? RGB(255, 255, 255) : (isHov ? RGB(245, 245, 245) : RGB(220, 220, 220)));
-        RECT textRc{indentX + 50, rowRc.top, sidebarWidth_ - 30, rowRc.bottom};
-        DrawTextW(hdc, item.name.c_str(), -1, &textRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        // Name and mini capacity progress bar if subtext is present
+        if (!item.subtext.empty()) {
+            SelectObject(hdc, fontRegular_);
+            SetTextColor(hdc, isSel ? RGB(255, 255, 255) : (isHov ? RGB(245, 245, 245) : RGB(220, 220, 220)));
+            RECT textRc{indentX + 50, rowRc.top + 2, sidebarWidth_ - 30, rowRc.top + 18};
+            DrawTextW(hdc, item.name.c_str(), -1, &textRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+
+            // Mini Capacity Meter & Free Text
+            int miniBarX = indentX + 50;
+            int miniBarY = rowRc.top + 21;
+            int miniBarW = 50;
+            int miniBarH = 4;
+            RECT miniTrackRc{miniBarX, miniBarY, miniBarX + miniBarW, miniBarY + miniBarH};
+            drawRoundedRect(hdc, miniTrackRc, 2, RGB(45, 45, 45), RGB(45, 45, 45));
+
+            RECT miniFillRc{miniBarX, miniBarY, miniBarX + 32, miniBarY + miniBarH};
+            drawRoundedRect(hdc, miniFillRc, 2, RGB(0, 153, 255), RGB(0, 153, 255));
+
+            SelectObject(hdc, fontSmall_);
+            SetTextColor(hdc, RGB(140, 155, 175));
+            RECT freeRc{miniBarX + miniBarW + 6, rowRc.top + 18, sidebarWidth_ - 8, rowRc.bottom};
+            DrawTextW(hdc, item.subtext.c_str(), -1, &freeRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        } else {
+            SelectObject(hdc, fontRegular_);
+            SetTextColor(hdc, isSel ? RGB(255, 255, 255) : (isHov ? RGB(245, 245, 245) : RGB(220, 220, 220)));
+            RECT textRc{indentX + 50, rowRc.top, sidebarWidth_ - 30, rowRc.bottom};
+            DrawTextW(hdc, item.name.c_str(), -1, &textRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        }
 
         // Pinned item pin indicator
         if (i >= 11 && i <= 22) {
@@ -4468,6 +4753,286 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
     DrawTextW(hdc, L"Copy Path", 9, &cTextRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 }
 
+void MainWindow::paintThisPcView(HDC hdc, int width, int height) {
+    (void)height;
+    int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
+    int surfaceLeft = sidebarWidth_;
+    int rightMargin = (showDetailsPane_ ? detailsPaneWidth_ : (showPreviewPane_ ? previewPaneWidth_ : 0));
+    int effWidth = width - rightMargin;
+
+    SetBkMode(hdc, TRANSPARENT);
+
+    // 1. System Health & Storage Overview Header Card (The Whole Picture)
+    RECT sysCardRc{surfaceLeft + 16, contentTop + 14, effWidth - 16, contentTop + 96};
+    drawRoundedRect(hdc, sysCardRc, 10, RGB(27, 32, 42), RGB(46, 56, 76));
+
+    // Computer Icon
+    SelectObject(hdc, fontIcons_);
+    SetTextColor(hdc, RGB(96, 205, 255));
+    RECT pcGlyphRc{sysCardRc.left + 16, sysCardRc.top, sysCardRc.left + 54, sysCardRc.bottom};
+    DrawTextW(hdc, L"\uE7F4", 1, &pcGlyphRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    // Computer Name & Specs
+    WCHAR compName[MAX_COMPUTERNAME_LENGTH + 1]{};
+    DWORD compLen = MAX_COMPUTERNAME_LENGTH + 1;
+    GetComputerNameW(compName, &compLen);
+    std::wstring compStr = (compName[0] != L'\0') ? compName : L"Local PC";
+
+    MEMORYSTATUSEX memStatus{};
+    memStatus.dwLength = sizeof(memStatus);
+    GlobalMemoryStatusEx(&memStatus);
+    uint64_t totalRamGB = (memStatus.ullTotalPhys + (1024ULL * 1024 * 1024 / 2)) / (1024ULL * 1024 * 1024);
+
+    SelectObject(hdc, fontTitle_);
+    SetTextColor(hdc, RGB(255, 255, 255));
+    RECT pcNameRc{sysCardRc.left + 62, sysCardRc.top + 14, sysCardRc.left + 340, sysCardRc.top + 40};
+    DrawTextW(hdc, compStr.c_str(), -1, &pcNameRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+    SelectObject(hdc, fontSmall_);
+    SetTextColor(hdc, RGB(160, 175, 195));
+    wchar_t specBuf[128];
+    swprintf_s(specBuf, L"Windows 11 NT 10.0  •  %llu GB Physical RAM  •  64-bit Architecture", totalRamGB);
+    RECT specRc{sysCardRc.left + 62, sysCardRc.top + 44, sysCardRc.left + 480, sysCardRc.top + 68};
+    DrawTextW(hdc, specBuf, -1, &specRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+    // Enumerate drives & calculate aggregate storage
+    thisPcDrives_.clear();
+    WCHAR driveStrings[512]{};
+    DWORD len = GetLogicalDriveStringsW(511, driveStrings);
+    uint64_t totalAllStorage = 0;
+    uint64_t totalAllFree = 0;
+
+    if (len > 0 && len <= 511) {
+        const WCHAR* ptr = driveStrings;
+        while (*ptr) {
+            std::wstring root = ptr;
+            DriveCardItem di;
+            di.root = root;
+            WCHAR volName[MAX_PATH + 1]{};
+            WCHAR fsName[MAX_PATH + 1]{};
+            GetVolumeInformationW(root.c_str(), volName, MAX_PATH, nullptr, nullptr, nullptr, fsName, MAX_PATH);
+            di.label = (volName[0] != L'\0') ? volName : L"Local Disk";
+            di.fileSystem = (fsName[0] != L'\0') ? fsName : L"NTFS";
+            ULARGE_INTEGER freeBytes{}, totalBytes{};
+            if (GetDiskFreeSpaceExW(root.c_str(), &freeBytes, &totalBytes, nullptr)) {
+                di.totalBytes = totalBytes.QuadPart;
+                di.freeBytes = freeBytes.QuadPart;
+                totalAllStorage += totalBytes.QuadPart;
+                totalAllFree += freeBytes.QuadPart;
+            }
+            thisPcDrives_.push_back(std::move(di));
+            ptr += wcslen(ptr) + 1;
+        }
+    }
+
+    // Right side of Header Card: Total Aggregated Storage + Health Pill
+    RECT healthPillRc{sysCardRc.right - 170, sysCardRc.top + 16, sysCardRc.right - 20, sysCardRc.top + 42};
+    drawRoundedRect(hdc, healthPillRc, 6, RGB(16, 45, 30), RGB(24, 120, 68));
+    SelectObject(hdc, fontSmall_);
+    SetTextColor(hdc, RGB(52, 211, 153));
+    DrawTextW(hdc, L"● System Healthy", -1, &healthPillRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    RECT aggStorageRc{sysCardRc.right - 360, sysCardRc.top + 46, sysCardRc.right - 20, sysCardRc.top + 68};
+    wchar_t aggBuf[128];
+    double freePct = (totalAllStorage > 0) ? (100.0 * static_cast<double>(totalAllFree) / static_cast<double>(totalAllStorage)) : 0.0;
+    swprintf_s(aggBuf, L"Capacity: %s  |  %s Free (%.0f%%)",
+        formatSize(totalAllStorage).c_str(), formatSize(totalAllFree).c_str(), freePct);
+    SetTextColor(hdc, RGB(200, 215, 235));
+    DrawTextW(hdc, aggBuf, -1, &aggStorageRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+
+    // 2. Section: Devices and Drives
+    int driveSectionTop = sysCardRc.bottom + 18;
+    RECT dTitleChevRc{surfaceLeft + 16, driveSectionTop, surfaceLeft + 32, driveSectionTop + 24};
+    SelectObject(hdc, fontIconsSmall_);
+    SetTextColor(hdc, RGB(180, 180, 180));
+    DrawTextW(hdc, L"\uE70D", 1, &dTitleChevRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    RECT dTitleRc{surfaceLeft + 36, driveSectionTop, surfaceLeft + 320, driveSectionTop + 24};
+    SelectObject(hdc, fontBold_);
+    SetTextColor(hdc, RGB(245, 245, 245));
+    wchar_t dHdrBuf[64];
+    swprintf_s(dHdrBuf, L"Devices and drives (%zu)", thisPcDrives_.size());
+    DrawTextW(hdc, dHdrBuf, -1, &dTitleRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+    int cardGap = 16;
+    int driveCols = std::clamp((effWidth - surfaceLeft - 32) / 340, 1, 3);
+    int driveCardW = (effWidth - surfaceLeft - 32 - (driveCols - 1) * cardGap) / driveCols;
+    int driveCardH = 96;
+    int driveStartY = driveSectionTop + 32;
+
+    for (size_t i = 0; i < thisPcDrives_.size(); ++i) {
+        int col = static_cast<int>(i % driveCols);
+        int row = static_cast<int>(i / driveCols);
+        int cx = surfaceLeft + 16 + col * (driveCardW + cardGap);
+        int cy = driveStartY + row * (driveCardH + cardGap);
+
+        auto& drive = thisPcDrives_[i];
+        drive.rect = RECT{cx, cy, cx + driveCardW, cy + driveCardH};
+
+        drawRoundedRect(hdc, drive.rect, 8, RGB(33, 33, 33), RGB(48, 48, 48));
+
+        // Drive Glyph (large radiant vector)
+        SelectObject(hdc, fontIcons_);
+        SetTextColor(hdc, RGB(96, 205, 255));
+        RECT iconBox{cx + 12, cy + 14, cx + 56, cy + 58};
+        DrawTextW(hdc, L"\uEDA2", 1, &iconBox, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        // Drive Label + Letter
+        std::wstring driveTitle = drive.label + L" (" + drive.root.substr(0, 2) + L")";
+        SelectObject(hdc, fontBold_);
+        SetTextColor(hdc, RGB(255, 255, 255));
+        RECT nameRc{cx + 64, cy + 14, cx + driveCardW - 60, cy + 34};
+        DrawTextW(hdc, driveTitle.c_str(), -1, &nameRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+
+        // FileSystem Tag
+        RECT fsRc{cx + driveCardW - 54, cy + 14, cx + driveCardW - 14, cy + 32};
+        drawRoundedRect(hdc, fsRc, 4, RGB(24, 38, 54), RGB(40, 70, 105));
+        SelectObject(hdc, fontSmall_);
+        SetTextColor(hdc, RGB(120, 205, 255));
+        DrawTextW(hdc, drive.fileSystem.c_str(), -1, &fsRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        // Storage Progress Bar
+        int barX = cx + 64;
+        int barY = cy + 42;
+        int barW = driveCardW - 78;
+        int barH = 7;
+        RECT barTrackRc{barX, barY, barX + barW, barY + barH};
+        drawRoundedRect(hdc, barTrackRc, 3, RGB(45, 45, 45), RGB(45, 45, 45));
+
+        double usedPct = 0;
+        if (drive.totalBytes > 0) {
+            uint64_t usedBytes = (drive.totalBytes > drive.freeBytes) ? (drive.totalBytes - drive.freeBytes) : 0;
+            usedPct = static_cast<double>(usedBytes) / static_cast<double>(drive.totalBytes);
+        }
+        int fillW = std::clamp(static_cast<int>(barW * usedPct), 0, barW);
+        COLORREF barFill = (usedPct > 0.95) ? RGB(232, 17, 35) : ((usedPct > 0.85) ? RGB(255, 185, 0) : RGB(0, 153, 255));
+        if (fillW > 0) {
+            RECT barFillRc{barX, barY, barX + fillW, barY + barH};
+            drawRoundedRect(hdc, barFillRc, 3, barFill, barFill);
+        }
+
+        // Subtext: Free of Total
+        wchar_t capBuf[96];
+        swprintf_s(capBuf, L"%s free of %s", formatSize(drive.freeBytes).c_str(), formatSize(drive.totalBytes).c_str());
+        SelectObject(hdc, fontSmall_);
+        SetTextColor(hdc, RGB(160, 160, 160));
+        RECT capRc{barX, cy + 57, cx + driveCardW - 14, cy + 77};
+        DrawTextW(hdc, capBuf, -1, &capRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    }
+
+    int numDriveRows = (static_cast<int>(thisPcDrives_.size()) + driveCols - 1) / driveCols;
+    int nextSectionTop = driveStartY + numDriveRows * (driveCardH + cardGap) + 16;
+
+    // 3. Section: System Folders (Desktop, Downloads, Documents, Pictures, Music, Videos)
+    RECT fTitleChevRc{surfaceLeft + 16, nextSectionTop, surfaceLeft + 32, nextSectionTop + 24};
+    SelectObject(hdc, fontIconsSmall_);
+    SetTextColor(hdc, RGB(180, 180, 180));
+    DrawTextW(hdc, L"\uE70D", 1, &fTitleChevRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    RECT fTitleRc{surfaceLeft + 36, nextSectionTop, surfaceLeft + 320, nextSectionTop + 24};
+    SelectObject(hdc, fontBold_);
+    SetTextColor(hdc, RGB(245, 245, 245));
+    DrawTextW(hdc, L"Folders (6)", -1, &fTitleRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+    if (thisPcFolderCards_.empty()) {
+        thisPcFolderCards_ = {
+            { L"Desktop", L"Personal folder", pathDesktop_, L"\uE7F4", RGB(0, 120, 215), {} },
+            { L"Downloads", L"User downloads", pathDownloads_, L"\uE896", RGB(0, 178, 148), {} },
+            { L"Documents", L"Personal documents", pathDocuments_, L"\uE8A5", RGB(110, 130, 155), {} },
+            { L"Pictures", L"Photo library", pathPictures_, L"\uEB9F", RGB(0, 153, 255), {} },
+            { L"Music", L"Audio collection", pathMusic_, L"\uE8D6", RGB(255, 110, 90), {} },
+            { L"Videos", L"Video library", pathVideos_, L"\uE714", RGB(160, 80, 220), {} },
+        };
+    }
+
+    int fCols = std::clamp((effWidth - surfaceLeft - 32) / 220, 1, 6);
+    int fCardW = (effWidth - surfaceLeft - 32 - (fCols - 1) * cardGap) / fCols;
+    int fCardH = 64;
+    int fStartY = nextSectionTop + 32;
+
+    for (size_t i = 0; i < thisPcFolderCards_.size(); ++i) {
+        int col = static_cast<int>(i % fCols);
+        int row = static_cast<int>(i / fCols);
+        int cx = surfaceLeft + 16 + col * (fCardW + cardGap);
+        int cy = fStartY + row * (fCardH + 12);
+
+        thisPcFolderCards_[i].rect = RECT{cx, cy, cx + fCardW, cy + fCardH};
+        drawRoundedRect(hdc, thisPcFolderCards_[i].rect, 8, RGB(33, 33, 33), RGB(48, 48, 48));
+
+        RECT bRc{cx + 10, cy + 10, cx + 50, cy + 50};
+        drawRoundedRect(hdc, bRc, 6, RGB(38, 38, 38), RGB(48, 48, 48));
+
+        SelectObject(hdc, fontIcons_);
+        SetTextColor(hdc, thisPcFolderCards_[i].badgeColor);
+        DrawTextW(hdc, thisPcFolderCards_[i].iconGlyph.c_str(), 1, &bRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        SelectObject(hdc, fontBold_);
+        SetTextColor(hdc, RGB(255, 255, 255));
+        RECT nRc{cx + 58, cy + 12, cx + fCardW - 10, cy + 32};
+        DrawTextW(hdc, thisPcFolderCards_[i].name.c_str(), -1, &nRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+
+        SelectObject(hdc, fontSmall_);
+        SetTextColor(hdc, RGB(150, 150, 150));
+        RECT sRc{cx + 58, cy + 34, cx + fCardW - 10, cy + 52};
+        DrawTextW(hdc, thisPcFolderCards_[i].subtext.c_str(), -1, &sRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+    }
+
+    int numFolderRows = (static_cast<int>(thisPcFolderCards_.size()) + fCols - 1) / fCols;
+    int toolSectionTop = fStartY + numFolderRows * (fCardH + 12) + 16;
+
+    // 4. Section: Storage Maintenance & Optimization Tools
+    RECT mTitleChevRc{surfaceLeft + 16, toolSectionTop, surfaceLeft + 32, toolSectionTop + 24};
+    SelectObject(hdc, fontIconsSmall_);
+    SetTextColor(hdc, RGB(180, 180, 180));
+    DrawTextW(hdc, L"\uE70D", 1, &mTitleChevRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    RECT mTitleRc{surfaceLeft + 36, toolSectionTop, surfaceLeft + 420, toolSectionTop + 24};
+    SelectObject(hdc, fontBold_);
+    SetTextColor(hdc, RGB(245, 245, 245));
+    DrawTextW(hdc, L"Storage Maintenance & Optimization Tools", -1, &mTitleRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+    if (thisPcTools_.empty()) {
+        thisPcTools_ = {
+            { L"Disk Cleanup", L"Purge temporary system & cache files", L"\uE74D", RGB(96, 205, 255), static_cast<int>(kCmdDiskCleanup), {} },
+            { L"Storage Sense", L"Configure automated Windows cleanup", L"\uE945", RGB(52, 211, 153), static_cast<int>(kCmdStorageSettings), {} },
+            { L"Open PowerShell", L"Launch high-privilege console in C:\\", L"\uE756", RGB(255, 185, 0), static_cast<int>(kCmdOpenPowershell), {} },
+            { L"Large Files (>100MB)", L"Scan root volume for space hogs", L"\uE721", RGB(168, 85, 247), static_cast<int>(kCmdFilterLargeFiles), {} }
+        };
+    }
+
+    int tCols = std::clamp((effWidth - surfaceLeft - 32) / 250, 1, 4);
+    int tCardW = (effWidth - surfaceLeft - 32 - (tCols - 1) * cardGap) / tCols;
+    int tCardH = 68;
+    int tStartY = toolSectionTop + 32;
+
+    for (size_t i = 0; i < thisPcTools_.size(); ++i) {
+        int col = static_cast<int>(i % tCols);
+        int row = static_cast<int>(i / tCols);
+        int cx = surfaceLeft + 16 + col * (tCardW + cardGap);
+        int cy = tStartY + row * (tCardH + 12);
+
+        thisPcTools_[i].rect = RECT{cx, cy, cx + tCardW, cy + tCardH};
+        drawRoundedRect(hdc, thisPcTools_[i].rect, 8, RGB(30, 34, 44), RGB(48, 56, 72));
+
+        RECT tbRc{cx + 10, cy + 12, cx + 52, cy + 54};
+        drawRoundedRect(hdc, tbRc, 6, RGB(36, 42, 56), RGB(50, 60, 80));
+
+        SelectObject(hdc, fontIcons_);
+        SetTextColor(hdc, thisPcTools_[i].color);
+        DrawTextW(hdc, thisPcTools_[i].glyph.c_str(), 1, &tbRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        SelectObject(hdc, fontBold_);
+        SetTextColor(hdc, RGB(255, 255, 255));
+        RECT tnRc{cx + 60, cy + 14, cx + tCardW - 10, cy + 34};
+        DrawTextW(hdc, thisPcTools_[i].title.c_str(), -1, &tnRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+        SelectObject(hdc, fontSmall_);
+        SetTextColor(hdc, RGB(160, 175, 195));
+        RECT tdRc{cx + 60, cy + 36, cx + tCardW - 10, cy + 56};
+        DrawTextW(hdc, thisPcTools_[i].desc.c_str(), -1, &tdRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+    }
+}
+
 void MainWindow::paintStatusBar(HDC hdc, int width, int height) {
     RECT statusRc{0, height - statusBarHeight_, width, height};
     HBRUSH bg = CreateSolidBrush(RGB(24, 24, 24));
@@ -4485,8 +5050,10 @@ void MainWindow::paintStatusBar(HDC hdc, int width, int height) {
     SetBkMode(hdc, TRANSPARENT);
 
     wchar_t statusBuf[256];
-    if (isSearching_) {
-        swprintf_s(statusBuf, L"%zu results found for \"%s\"  |  %s  |  GodXplr High-Performance Local Engine",
+    if (isThisPcView_) {
+        swprintf_s(statusBuf, L"This PC  |  Devices & Drives  |  GodXplr Storage & System Health Lens");
+    } else if (isSearching_) {
+        swprintf_s(statusBuf, L"%zu results found for \"%s\"  |  %s  |  GodXplr Local Engine",
             filteredIndices_.size(),
             currentSearchQuery_.c_str(),
             hasExactSearchMatches_ ? L"Deep Recursive Search" : L"Intelligent Fuzzy Recommendation Engine");
@@ -4499,8 +5066,48 @@ void MainWindow::paintStatusBar(HDC hdc, int width, int height) {
             filteredIndices_.size());
     }
 
-    RECT textRc{16, height - statusBarHeight_, width - 100, height};
+    RECT textRc{16, height - statusBarHeight_, width - 360, height};
     DrawTextW(hdc, statusBuf, -1, &textRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+    // Right Side: Drive Storage Telemetry
+    ULARGE_INTEGER freeBytes{}, totalBytes{};
+    std::wstring driveRoot = (isHomeView_ || isThisPcView_ || currentPath_.empty()) ? L"C:\\" : (currentPath_.root_path().empty() ? L"C:\\" : currentPath_.root_path().wstring());
+    if (GetDiskFreeSpaceExW(driveRoot.c_str(), &freeBytes, &totalBytes, nullptr)) {
+        wchar_t storageBuf[128];
+        swprintf_s(storageBuf, L"%s %s free of %s",
+            driveRoot.substr(0, 2).c_str(),
+            formatSize(freeBytes.QuadPart).c_str(),
+            formatSize(totalBytes.QuadPart).c_str());
+
+        RECT driveTextRc{width - 340, height - statusBarHeight_, width - 110, height};
+        SelectObject(hdc, fontSmall_);
+        SetTextColor(hdc, RGB(165, 175, 190));
+        DrawTextW(hdc, storageBuf, -1, &driveTextRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    }
+
+    // Quick View Mode Switcher Buttons: Details, Tiles, Large Icons
+    int btnW = 28;
+    int btnH = 22;
+    int btnY = height - statusBarHeight_ + (statusBarHeight_ - btnH) / 2;
+
+    statusViewDetailsRc_ = RECT{width - 96, btnY, width - 96 + btnW, btnY + btnH};
+    statusViewTilesRc_ = RECT{width - 64, btnY, width - 64 + btnW, btnY + btnH};
+    statusViewLargeRc_ = RECT{width - 32, btnY, width - 32 + btnW, btnY + btnH};
+
+    auto drawViewBtn = [&](const RECT& rc, const wchar_t* glyph, bool isActive) {
+        if (isActive) {
+            drawRoundedRect(hdc, rc, 4, RGB(25, 48, 72), RGB(96, 205, 255));
+        } else {
+            drawRoundedRect(hdc, rc, 4, RGB(28, 28, 28), RGB(40, 40, 40));
+        }
+        SelectObject(hdc, fontIconsSmall_);
+        SetTextColor(hdc, isActive ? RGB(96, 205, 255) : RGB(160, 160, 160));
+        DrawTextW(hdc, glyph, 1, const_cast<RECT*>(&rc), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    };
+
+    drawViewBtn(statusViewDetailsRc_, L"\uE8BC", viewMode_ == ViewMode::Details);
+    drawViewBtn(statusViewTilesRc_, L"\uE8A5", viewMode_ == ViewMode::Tiles);
+    drawViewBtn(statusViewLargeRc_, L"\uE74C", viewMode_ == ViewMode::LargeIcons);
 }
 
 void MainWindow::onPaint(HDC hdc) {
@@ -4531,9 +5138,15 @@ void MainWindow::onPaint(HDC hdc) {
     // 4. Sidebar (Expandable Tree Nodes)
     paintSidebar(memDC, height);
 
-    // 5. Main Surface (Home View vs Directory View)
-    if (isHomeView_ && !isSearching_) {
+    // 5. Main Surface (This PC vs Home View vs Directory View)
+    if (isThisPcView_) {
+        paintThisPcView(memDC, width, height);
+    } else if (isHomeView_ && !isSearching_) {
         paintHomeView(memDC, width, height);
+    } else if (viewMode_ == ViewMode::Tiles) {
+        paintTilesView(memDC, width, height);
+    } else if (viewMode_ == ViewMode::LargeIcons || viewMode_ == ViewMode::MediumIcons) {
+        paintLargeIconsView(memDC, width, height, viewMode_ == ViewMode::LargeIcons);
     } else {
         paintDirectoryView(memDC, width, height);
     }
