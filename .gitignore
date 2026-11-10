@@ -22,3 +22,8 @@ Makefile
 *.log
 *.dmp
 
+# Academic deliverables and submissions
+deliverables/
+*.docx
+
+
