@@ -39,3 +39,4 @@ res_word = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], c
 print("DOCX output:", res_word.stdout)
 if os.path.exists(docx_path):
     print("Generated DOCX size:", os.path.getsize(docx_path), "bytes")
+

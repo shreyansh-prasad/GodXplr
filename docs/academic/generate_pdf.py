@@ -35,3 +35,4 @@ print("Stderr:", res.stderr)
 print("PDF exists:", os.path.exists(pdf_path))
 if os.path.exists(pdf_path):
     print("PDF size:", os.path.getsize(pdf_path), "bytes")
+

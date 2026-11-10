@@ -97,3 +97,4 @@ Total Test time (real) = 5.53 sec
 - **Observed Viewport Repaint Duration:** 0.42 ms to 0.85 ms
 - **Number of Rendered Rows in Viewport:** Fixed slice of 25–45 rows (regardless of folder containing 10 or 100,000 items)
 - **Flicker-Free Assurance:** Direct double-buffering via memory DC `BitBlt` with zero GDI handle leaks.
+

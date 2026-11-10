@@ -16,3 +16,4 @@ cmd = [
 
 subprocess.run(cmd, check=True)
 print("Screenshot generated:", os.path.exists(out_img), "size:", os.path.getsize(out_img) if os.path.exists(out_img) else 0)
+

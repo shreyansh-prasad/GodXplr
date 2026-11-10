@@ -122,3 +122,4 @@ if __name__ == "__main__":
     run_and_capture(r"C:\os fileX\IEEE_Demo\Documents", os.path.join(out_dir, "fig02_directory_navigation.png"), 1.8)
     # 3. Source_Code subdirectory
     run_and_capture(r"C:\os fileX\IEEE_Demo\Source_Code", os.path.join(out_dir, "fig03_file_operations.png"), 1.8)
+

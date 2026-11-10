@@ -172,3 +172,4 @@ if __name__ == "__main__":
     create_architecture_diagram(os.path.join(d_dir, "diagram01_system_architecture.png"))
     create_workflow_diagram(os.path.join(d_dir, "diagram02_application_workflow.png"))
     create_module_interaction_diagram(os.path.join(d_dir, "diagram03_module_interaction.png"))
+
