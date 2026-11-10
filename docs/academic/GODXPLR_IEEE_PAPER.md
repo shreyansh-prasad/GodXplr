@@ -285,3 +285,4 @@ Future research directions include extending GodXplr's virtual provider abstract
 8. D. A. Patterson, G. Gibson, and R. H. Katz, "A case for redundant arrays of inexpensive disks (RAID)," in *Proceedings of the 1988 ACM SIGMOD international conference on Management of data*, 1988, pp. 109–116.
 9. M. Russinovich, D. A. Solomon, and A. Ionescu, *Windows Internals, Part 2*, 7th ed. Redmond, WA, USA: Microsoft Press, 2021.
 10. S. Prasad, "GodXplr: High-Performance Zero-Hydration Native Windows Explorer Architecture," GitHub Repository, 2026. [Online]. Available: `https://github.com/shreyansh-prasad/GodXplr.git`
+
