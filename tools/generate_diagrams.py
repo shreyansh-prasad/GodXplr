@@ -1,8 +1,7 @@
 import os
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 def create_architecture_diagram(output_path):
-    # Professional academic architecture diagram
     w, h = 1200, 700
     img = Image.new("RGB", (w, h), (255, 255, 255))
     draw = ImageDraw.Draw(img)
@@ -22,10 +21,10 @@ def create_architecture_diagram(output_path):
 
     # 1. UI Layer
     draw.rectangle([(50, 70), (w - 50, 190)], fill=c_bg_ui, outline=c_border, width=1)
-    draw.text((65, 80), "1. Virtualized Sensory GUI Shell (Native Win32 GDI / Apple Design System)", fill=c_accent)
+    draw.text((65, 80), "1. Row-Virtualized GUI Shell (Native Win32 GDI / Apple Design System)", fill=c_accent)
     boxes_ui = [
         ("MainWindow (Win32)", "Event Loop & HWND"),
-        ("VirtualizedView", "O(1) Viewport Projection"),
+        ("VirtualizedView", "O(1) Viewport Slicing"),
         ("GdiRenderer", "Double-Buffered BitBlt"),
         ("TactileFeedback", "Sub-16ms Intent Loop"),
         ("PdfInspector", "Stream Dictionary Parser")
@@ -42,11 +41,11 @@ def create_architecture_diagram(output_path):
 
     # 2. Resilient Operations & Provider SPI
     draw.rectangle([(50, 230), (w - 50, 350)], fill=c_bg_ops, outline=c_border, width=1)
-    draw.text((65, 240), "2. Resilient File Operations & Virtual Storage Provider SPI", fill=(0, 128, 64))
+    draw.text((65, 240), "2. File Operations Journal & Virtual Storage Provider SPI", fill=(0, 128, 64))
     boxes_ops = [
-        ("FileOpsEngine", "ACID Transactions"),
-        ("WalJournal", "Append-Only Undo/Redo"),
-        ("ZeroHydrationGate", "Reparse Point Filter"),
+        ("FileOpsCoordinator", "Mutation Orchestration"),
+        ("OperationJournal", "Intent Log & Recovery"),
+        ("CloudDefenseGate", "Reparse Tag Inspection"),
         ("CloudProviderSPI", "OneDrive / GDrive / MTP"),
         ("ArchiveVFS", "Zip / 7z Stream Provider")
     ]
@@ -57,17 +56,17 @@ def create_architecture_diagram(output_path):
         draw.text((bx + 15, 302), b_sub, fill=(100, 100, 100))
 
     # Arrow 2
-    draw.text((w // 2 - 130, 360), "v  Direct Kernel DeviceIOControl (FSCTL)  v", fill=(120, 120, 120))
+    draw.text((w // 2 - 130, 360), "v  Direct Win32 Kernel DeviceIOControl (FSCTL)  v", fill=(120, 120, 120))
 
     # 3. High-Performance Core Indexer
     draw.rectangle([(50, 390), (w - 50, 510)], fill=c_bg_core, outline=c_border, width=1)
-    draw.text((65, 400), "3. High-Performance In-Memory Search Core", fill=(180, 90, 0))
+    draw.text((65, 400), "3. In-Memory Search Core & USN Synchronization", fill=(180, 90, 0))
     boxes_core = [
-        ("MftRawEnumerator", "Cold FSCTL_ENUM_USN"),
+        ("MftRawEnumerator", "Bulk FSCTL_ENUM_USN"),
         ("UsnJournalTailer", "Hot 50ms Real-Time Poll"),
-        ("SimdSearch (AVX2)", "256-bit Vector Matching"),
+        ("SimdSearch (AVX2)", "32-Lane Byte Comparison"),
         ("TrigramIndex", "Inverted Bit-Packed Lists"),
-        ("PackedRecordStore", "132.5 B / Record Contig.")
+        ("PackedRecordStore", "132.5 B / Entry Average")
     ]
     for i, (b_title, b_sub) in enumerate(boxes_core):
         bx = 70 + i * 215
@@ -80,11 +79,11 @@ def create_architecture_diagram(output_path):
 
     # 4. OS & Hardware Abstraction
     draw.rectangle([(50, 550), (w - 50, 670)], fill=c_bg_os, outline=c_border, width=1)
-    draw.text((65, 560), "4. Windows Kernel & Hardware Subsystems", fill=(80, 80, 80))
+    draw.text((65, 560), "4. Operating System APIs & Hardware Architecture", fill=(80, 80, 80))
     boxes_os = [
-        ("NTFS Filesystem", "Volume C: / MFT Table"),
-        ("cldflt.sys Minifilter", "Cloud Filter API"),
-        ("Win32 GDI / DWM", "Double-Buffered Compositor"),
+        ("NTFS Change Journal", "Volume C: / USN Stream"),
+        ("Win32 Cloud Filter API", "Reparse Point Attributes"),
+        ("Win32 GDI Subsystem", "Double-Buffered Compositor"),
         ("AVX2 Hardware", "Intel / AMD 256-bit SIMD"),
         ("NVMe Storage", "PCIe 4.0 Direct Block I/O")
     ]
@@ -111,9 +110,9 @@ def create_workflow_diagram(output_path):
 
     steps = [
         ("Phase 1: Bootstrap", "Open Raw Volume \\\\.\\C:\nIssue FSCTL_ENUM_USN_DATA\nIngest 100k+ MFT records in 54ms\nPopulate packed contiguous RAM"),
-        ("Phase 2: USN Tailing", "Poll FSCTL_READ_USN_JOURNAL\n50ms asynchronous tick\nCapture creates, deletes, renames\nZero-drop real-time sync"),
-        ("Phase 3: SIMD Query", "User keystroke event\nBroadcast needles to AVX2\n8-lane 256-bit parallel scan\np50 latency: 655 microseconds"),
-        ("Phase 4: O(1) Render", "Project visible [istart, iend]\nZero UI widget explosion\nPaint 25-45 rows via GDI BitBlt\nSub-16ms tactile interaction")
+        ("Phase 2: USN Tailing", "Poll FSCTL_READ_USN_JOURNAL\n50ms asynchronous tick\nCapture creates, deletes, renames\nReal-time index synchronization"),
+        ("Phase 3: SIMD Query", "User keystroke event\nBroadcast needles to AVX2\n32-lane 256-bit byte comparisons\np50 latency: 655 microseconds"),
+        ("Phase 4: O(1) Viewport", "Project visible [istart, iend]\nZero child widget allocations\nPaint 25-45 rows via GDI BitBlt\nSub-16ms tactile interaction")
     ]
 
     bx = 45
@@ -130,7 +129,7 @@ def create_workflow_diagram(output_path):
             draw.text((bx + bw + 6, 230), "===>", fill=(0, 102, 204))
         bx += 260
 
-    draw.text((w // 2 - 250, 420), "Result: Sub-millisecond continuous indexing with 132.5 B/record memory density", fill=(100, 100, 100))
+    draw.text((w // 2 - 250, 420), "Result: Sub-millisecond continuous indexing with 132.5 B/entry average density", fill=(100, 100, 100))
     img.save(output_path, "PNG")
     print("Saved:", output_path)
 
@@ -153,12 +152,12 @@ def create_module_interaction_diagram(output_path):
     # Center: Core Orchestration
     draw.rectangle([(370, 100), (630, 440)], fill=(255, 250, 240), outline=c_border, width=1)
     draw.text((390, 120), "CORE COORDINATION", fill=(180, 90, 0))
-    draw.text((390, 160), "SearchEngine:\n  Dispatches needles to SIMD\n  Computes ranking score\n\nFileOpsEngine:\n  Creates transaction record\n  Appends to WAL Journal\n\nZeroHydrationGate:\n  Inspects reparse point attributes", fill=(40, 40, 40))
+    draw.text((390, 160), "SearchEngine:\n  Dispatches needles to SIMD\n  Computes ranking score\n\nFileOpsCoordinator:\n  Logs intent to OperationJournal\n  Tracks .gxpartial transfers\n\nCloudDefenseGate:\n  Inspects reparse point attributes", fill=(40, 40, 40))
 
     # Right: Storage & OS
     draw.rectangle([(680, 100), (940, 440)], fill=(240, 255, 245), outline=c_border, width=1)
-    draw.text((700, 120), "STORAGE & PLATFORM", fill=(0, 128, 64))
-    draw.text((700, 160), "NTFS USN Change Journal:\n  Low-overhead event tailing\n\nWAL Log File on Disk:\n  Synchronous flush via write-thru\n\nCloud Minifilter Driver:\n  Guarded against hydration\n\nWin32 GDI Memory DC:\n  Double-buffered BitBlt repaint", fill=(40, 40, 40))
+    draw.text((700, 120), "STORAGE & PLATFORM APIS", fill=(0, 128, 64))
+    draw.text((700, 160), "NTFS USN Change Journal:\n  Low-overhead event tailing\n\nOperationJournal Disk File:\n  Serialized binary intent state\n\nCloud Storage Providers:\n  Guarded via Reparse Tags\n\nWin32 GDI Memory DC:\n  Double-buffered BitBlt repaint", fill=(40, 40, 40))
 
     # Connectors
     draw.text((328, 260), "===>", fill=(100, 100, 100))
@@ -172,4 +171,3 @@ if __name__ == "__main__":
     create_architecture_diagram(os.path.join(d_dir, "diagram01_system_architecture.png"))
     create_workflow_diagram(os.path.join(d_dir, "diagram02_application_workflow.png"))
     create_module_interaction_diagram(os.path.join(d_dir, "diagram03_module_interaction.png"))
-

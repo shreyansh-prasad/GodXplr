@@ -197,17 +197,17 @@
 <div class="two-column-layout">
 
   <div class="abstract-box">
-    <span class="abstract-title">Abstract</span>—Modern desktop file management shells and content retrieval engines frequently exhibit notable performance bottlenecks, including high memory utilization, multi-second query latencies during recursive searches, and uncoordinated cloud-storage hydration stalls. Many consumer desktop managers rely on heavyweight web-wrapper runtimes or unvirtualized graphical frameworks that allocate discrete UI elements for every listed entity, resulting in elevated resource consumption. Furthermore, standard search indexers often incur substantial storage footprints or inadvertently trigger remote downloads of offline cloud placeholder files during background directory traversals.
+    <span class="abstract-title">Abstract</span>—Modern desktop file management shells and content retrieval engines frequently encounter notable performance bottlenecks, including elevated memory consumption, multi-second query latencies during recursive searches, and uncoordinated cloud-storage hydration stalls. Many consumer desktop managers rely on heavyweight web-wrapper runtimes or unvirtualized graphical frameworks that allocate discrete UI objects for every listed entity, resulting in high resource consumption. Furthermore, standard search indexers often incur substantial storage footprints or inadvertently trigger remote downloads of offline cloud placeholder files during background directory traversals.
     <br><br>
-    This paper presents <strong>GodXplr</strong>, a native filesystem management and content retrieval architecture implemented in standard C++20 for the Windows platform. GodXplr integrates: (i) an asynchronous indexing subsystem utilizing bulk-buffered NTFS Master File Table (MFT) enumeration and real-time Update Sequence Number (USN) Journal tailing; (ii) an AVX2 SIMD-vectorized multi-needle substring and fuzzy match ranking engine; (iii) a memory-bounded, positionless inverted trigram content index; (iv) a write-ahead intent logging engine with journaled crash-recovery and rollback support; (v) a cloud placeholder defense gate that intercepts Windows Cloud Filter API reparse tags to prevent unwanted remote file hydration; and (vi) a row-virtualized user interface implemented natively using the Win32 GDI API, projecting visible rows in <i>O</i>(1) time relative to directory size, with double-buffered rendering and direct manipulation interaction dynamics. Empirical evaluations across synthetic and live workloads demonstrate that GodXplr indexes 100,000 file entries in 54.92 ms with a raw index payload density of 132.5 bytes per record (13.25 MB total index payload; 23.9 MB overall application working set), sustains sub-millisecond query search latencies (<i>p</i><sub>50</sub> = 655 &mu;s), achieves a 24.2&times; process memory reduction compared to Windows 11 File Explorer under equivalent scale, and passes 100% of an automated 28-suite integration test harness under MSVC /W4 /WX.
+    This paper presents <strong>GodXplr</strong>, a native filesystem management and content retrieval architecture implemented in standard C++20 for the Windows platform. GodXplr integrates: (i) an asynchronous indexing subsystem utilizing bulk-buffered NTFS Master File Table (MFT) enumeration and real-time Update Sequence Number (USN) Journal tailing; (ii) an AVX2 SIMD-vectorized multi-needle substring filtering engine operating across 32 byte-wide lanes per 256-bit register; (iii) a memory-bounded, positionless inverted trigram content index; (iv) a file operation intent logging engine (<code>OperationJournal</code>) with startup recovery and partial transfer cleanup; (v) a cloud placeholder defense gate that intercepts Windows Cloud Filter API reparse tags to prevent unwanted remote file hydration; and (vi) a row-virtualized user interface implemented natively using the Win32 GDI API, projecting visible rows in <i>O</i>(1) time relative to directory size, with double-buffered rendering and direct manipulation interaction dynamics. Empirical evaluations demonstrate that GodXplr indexes 100,000 file entries in 54.92 ms with an average raw index payload density of 132.5 bytes per entry (13.25 MB total index payload; 23.9 MB overall application working set), sustains sub-millisecond query search latencies (<i>p</i><sub>50</sub> = 655 &mu;s), achieves a 24.3&times; process memory reduction compared to Windows 11 File Explorer under equivalent scale, and passes 100% of an automated 28-suite integration test harness under MSVC /W4 /WX.
   </div>
 
   <div class="index-terms">
-    <span class="index-terms-title">Index Terms</span>—Filesystem Indexing, NTFS USN Journal, SIMD Vectorization, Inverted Trigram Index, Cloud Placeholders, UI Row Virtualization, Win32 GDI, Write-Ahead Intent Logging.
+    <span class="index-terms-title">Index Terms</span>—Filesystem Indexing, NTFS USN Journal, SIMD Vectorization, Inverted Trigram Index, Cloud Placeholders, UI Row Virtualization, Win32 GDI, File Operation Journaling.
   </div>
 
   <h2 class="sec-heading">I. Introduction</h2>
-  <p>The desktop filesystem shell serves as the primary interface between computer users and hierarchical secondary storage. Over the past three decades, rapid expansions in storage capacity, solid-state drive (SSD) throughput, and cloud synchronization networks have increased typical user data collections from thousands of local files to millions of heterogeneous entities distributed across local volumes, virtual network mounts, and cloud-backed synchronized directories (e.g., Microsoft OneDrive, Google Drive, Apple iCloud Drive).</p>
+  <p>The desktop filesystem shell serves as the primary interface between users and hierarchical secondary storage [8]. Over the past three decades, rapid expansions in storage capacity, solid-state drive (SSD) throughput, and cloud synchronization networks have increased typical user data collections from thousands of local files to millions of heterogeneous entities distributed across local volumes, virtual network mounts, and cloud-backed synchronized directories (e.g., Microsoft OneDrive, Google Drive, Apple iCloud Drive).</p>
 
   <p>Despite hardware advancements, modern desktop file managers (e.g., Windows File Explorer, macOS Finder) exhibit notable architectural limitations:
   (1) <i>High Memory Overhead:</i> Contemporary GUI frameworks (such as WinUI 3, XAML Islands, and web-based wrappers) often require hundreds of megabytes of working memory for basic directory listings by instantiating discrete UI object wrappers for each item;
@@ -222,10 +222,10 @@
   (1) maintaining an average index payload density of &le; 135 bytes per entry;
   (2) evaluating multi-needle substring queries across 10<sup>5</sup>+ records in &lt; 1 ms via SIMD vectorization;
   (3) preventing automated data hydration when scanning or previewing Windows Cloud Filter API reparse points;
-  (4) providing transactional intent logging with automated crash-recovery and rollback for multi-file operations; and
+  (4) providing structured intent logging with automated startup cleanup for interrupted multi-file operations; and
   (5) eliminating UI widget proliferation by projecting visible rows in <i>O</i>(1) computational time relative to directory size.</p>
 
-  <p><i>Scope Boundaries:</i> The project scope encompasses local volume indexing, real-time NTFS change tracking, in-memory string search, transactional file operation coordination, and native Win32 rendering. Distributed network consensus protocols, proprietary cloud sync negotiation algorithms, and kernel-mode minifilter drivers are explicitly outside the scope of this implementation.</p>
+  <p><i>Scope Boundaries:</i> The project scope encompasses local volume indexing, real-time NTFS change tracking, in-memory string search, file operation coordination, and native Win32 rendering. Distributed network consensus protocols, proprietary cloud sync negotiation algorithms, and kernel-mode minifilter drivers are explicitly outside the scope of this implementation.</p>
 
   <h2 class="sec-heading">III. Background & Related Work</h2>
   <p>Table I summarizes the architectural characteristics of prominent desktop file managers.</p>
@@ -235,9 +235,10 @@
     <thead>
       <tr>
         <th>System</th>
-        <th>Search Mechanism</th>
-        <th>Index Payload (100k)</th>
-        <th>Process Working Set (100k)</th>
+        <th>Language / Toolkit</th>
+        <th>Search Strategy</th>
+        <th>Directory Traversal</th>
+        <th>UI Virtualization</th>
         <th>Cloud Reparse Aware</th>
         <th>Mutation Journaling</th>
       </tr>
@@ -245,41 +246,46 @@
     <tbody>
       <tr>
         <td><b>Win11 Explorer</b></td>
-        <td>Win32 FindFirstFile / WDS</td>
-        <td>Unspecified</td>
-        <td>&approx; 580 MB</td>
+        <td>C++ / XAML / WinUI</td>
+        <td>WDS Index + Win32</td>
+        <td>Hierarchical Disk Seek</td>
+        <td>Partial (ListView)</td>
         <td>No (Hydration risk)</td>
         <td>No (Best-effort undo)</td>
       </tr>
       <tr>
         <td><b>Everything</b></td>
+        <td>C++ / Win32 GDI</td>
         <td>NTFS USN / MFT Scraping</td>
-        <td>&approx; 12 MB</td>
-        <td>&approx; 16 MB</td>
+        <td>Flat In-Memory Table</td>
+        <td>Yes (Owner-Drawn GDI)</td>
         <td>Yes (Metadata only)</td>
         <td>No (Direct Win32)</td>
       </tr>
       <tr>
         <td><b>Directory Opus</b></td>
+        <td>C++ / MFC</td>
         <td>MFT Cache + Win32</td>
-        <td>Unspecified</td>
-        <td>&approx; 65 MB</td>
+        <td>Dual-Pane Tree</td>
+        <td>Yes (Custom MFC)</td>
         <td>Partial</td>
         <td>No (Basic undo)</td>
       </tr>
       <tr>
         <td><b>Total Commander</b></td>
+        <td>Delphi / Win32</td>
         <td>Directory Walk / Index</td>
-        <td>Unspecified</td>
-        <td>&approx; 40 MB</td>
+        <td>Dual-Pane File List</td>
+        <td>Yes (Custom Controls)</td>
         <td>No</td>
         <td>No</td>
       </tr>
       <tr class="last-row">
         <td><b>GodXplr</b></td>
-        <td><b>USN + AVX2 + Trigram</b></td>
-        <td><b>13.25 MB (132.5 B/rec)</b></td>
-        <td><b>23.9 MB</b></td>
+        <td><b>C++20 Native / GDI</b></td>
+        <td><b>USN Tailing + AVX2 + Trigram</b></td>
+        <td><b>Flat In-Memory Arena</b></td>
+        <td><b>Yes (Strict O(1) Viewport)</b></td>
         <td><b>Yes (Verified Cloud API)</b></td>
         <td><b>Yes (Intent Journal)</b></td>
       </tr>
@@ -291,69 +297,79 @@
 
   <div class="fig-box">
     <img src="../figures/diagrams/diagram01_system_architecture.png" alt="System Architecture">
-    <div class="fig-caption"><b>Fig. 1.</b> GodXplr Multi-Tier System Architecture, delineating the Virtualized Sensory GUI Shell, Resilient Operations WAL Engine, and NTFS/USN SIMD Search Core.</div>
+    <div class="fig-caption"><b>Fig. 1.</b> GodXplr Multi-Tier System Architecture, delineating the Row-Virtualized GUI Shell, Resilient Operations Engine, and NTFS/USN Search Core.</div>
   </div>
 
   <p>The application execution lifecycle is depicted in Fig. 2, progressing from direct volume bootstrap to hot real-time journal synchronization.</p>
 
   <div class="fig-box">
     <img src="../figures/diagrams/diagram02_application_workflow.png" alt="Execution Workflow">
-    <div class="fig-caption"><b>Fig. 2.</b> GodXplr Execution and Lifecycle Workflow, showing MFT bootstrap, 50ms USN journal tailing, SIMD multi-needle query execution, and O(1) GDI viewport projection.</div>
+    <div class="fig-caption"><b>Fig. 2.</b> GodXplr Execution and Lifecycle Workflow, showing MFT bootstrap, 50ms USN journal tailing, 32-lane SIMD multi-needle query execution, and O(1) GDI viewport projection.</div>
   </div>
 
   <div class="fig-box">
     <img src="../figures/diagrams/diagram03_module_interaction.png" alt="Component Interaction">
-    <div class="fig-caption"><b>Fig. 3.</b> Component Interaction and Data Flow Diagram, demonstrating IPC isolation between client UI, WAL engine, and storage minifilters.</div>
+    <div class="fig-caption"><b>Fig. 3.</b> Component Interaction and Data Flow Diagram, demonstrating communication between the client UI, OperationJournal, and platform filesystem APIs.</div>
   </div>
 
   <h2 class="sec-heading">V. Implementation & Methodology</h2>
   <h3 class="subsec-heading">A. Memory-Bounded Record Layout</h3>
   <p>Filesystem records are stored in contiguous, flat-packed cache-aligned memory blocks:</p>
   <div class="math-block">
-    Record Size = S<sub>Fixed</sub> + S<sub>PackedName</sub> = 132.5 bytes (average)
+    Average Record Size = S<sub>Fixed</sub> + S<sub>PackedName</sub> = 132.5 bytes
     <span class="eq-num">(1)</span>
   </div>
-  <p>Each entry encodes 64-bit parent and self MFT identifiers, 64-bit file size, 64-bit timestamps, a 32-bit attribute mask, a 16-bit pinned extension token, and a null-terminated UTF-8 path buffer. Under this packed representation, 100,000 entries require 13.25 MB of raw index memory (23.9 MB total application working set), scaling to 5,000,000 entries in approximately 662.5 MB of heap memory.</p>
+  <p>The fixed portion encodes 64-bit parent and self MFT identifiers, 64-bit file size, 64-bit timestamps, a 32-bit attribute mask, and a 16-bit pinned extension token. Variable-length UTF-8 filenames are stored in a contiguous string arena. Across a representative workload of 100,000 files, the average record size is 132.5 bytes, requiring 13.25 MB of raw index payload memory (23.9 MB total process working set).</p>
 
   <h3 class="subsec-heading">B. Bulk-Buffered MFT Ingestion & USN Tailing</h3>
   <p>GodXplr utilizes a two-phase index construction pipeline:
-  (1) <i>Cold Bootstrap:</i> Opening raw volume handles (<code>\\.\C:</code>) issues <code>FSCTL_ENUM_USN_DATA</code>. The enumerator streams MFT records in 1024-byte chunks, applies sector fixup array validation to guard against torn writes, and parses parent-child directory relationships in <i>O</i>(<i>N</i>) time;
-  (2) <i>Hot Synchronization:</i> Post-bootstrap, the engine tails the active NTFS Change Journal via <code>FSCTL_READ_USN_JOURNAL</code> on an asynchronous 50 ms timer. Record creations, deletions, and renames append lightweight event records, maintaining real-time index synchronization without invoking filesystem watcher hooks (<code>ReadDirectoryChangesW</code>), which can drop notifications under heavy I/O workloads.</p>
+  (1) <i>Cold Bootstrap:</i> Opening raw volume handles (<code>\\.\C:</code>) with elevation issues <code>FSCTL_ENUM_USN_DATA</code>. The enumerator streams MFT records in 1024-byte buffers, applies sector fixup array validation to guard against torn writes [9], and parses parent-child directory relationships in <i>O</i>(<i>N</i>) time;
+  (2) <i>Hot Synchronization:</i> Post-bootstrap, the engine tails the active NTFS Change Journal via <code>FSCTL_READ_USN_JOURNAL</code> on an asynchronous 50 ms timer [1]. Record creations, deletions, and renames append lightweight event records, maintaining real-time index synchronization without invoking filesystem watcher hooks (<code>ReadDirectoryChangesW</code>), which can drop notifications under heavy I/O workloads.</p>
 
-  <h3 class="subsec-heading">C. AVX2 Vectorized SIMD Filtering</h3>
-  <p>Keystroke queries are evaluated via 8-lane 256-bit SIMD intrinsics [2]. Boundary needle characters <i>c</i><sub>0</sub> = <i>Q</i>[0] and <i>c</i><sub><i>m</i>-1</sub> = <i>Q</i>[<i>m</i>-1] are broadcast into vector registers:</p>
+  <h3 class="subsec-heading">C. AVX2 32-Lane Vectorized SIMD Filtering</h3>
+  <p>Keystroke queries are evaluated via 256-bit AVX2 SIMD intrinsics operating on 32 byte-wide lanes [2]. When searching for a multi-character needle <i>Q</i> of length <i>m</i>, the first and last characters <i>c</i><sub>0</sub> = <i>Q</i>[0] and <i>c</i><sub><i>m</i>-1</sub> = <i>Q</i>[<i>m</i>-1] are broadcast across 32 byte lanes using <code>_mm256_set1_epi8</code>:</p>
   <div class="math-block">
     v<sub>first</sub> = _mm256_set1_epi8(c<sub>0</sub>), &nbsp; v<sub>last</sub> = _mm256_set1_epi8(c<sub>m-1</sub>)
     <span class="eq-num">(2)</span>
   </div>
-  <p>Candidate strings are loaded in 32-byte chunks and evaluated in parallel via <code>_mm256_cmpeq_epi8</code> and <code>_mm256_movemask_epi8</code>, eliminating 98.7% of scalar branch mispredictions [3] and achieving 655 &mu;s scan times across 100,000 items.</p>
+  <p>Candidate strings in the arena are evaluated 32 bytes at a time:</p>
+  <div class="math-block">
+    m<sub>head</sub> = _mm256_cmpeq_epi8(v<sub>first</sub>, _mm256_loadu_si256(p))<br>
+    m<sub>tail</sub> = _mm256_cmpeq_epi8(v<sub>last</sub>, _mm256_loadu_si256(p + m - 1))<br>
+    m<sub>mask</sub> = _mm256_movemask_epi8(_mm256_and_si256(m<sub>head</sub>, m<sub>tail</sub>))
+    <span class="eq-num">(3)</span>
+  </div>
+  <p>The resulting 32-bit mask <i>m</i><sub>mask</sub> identifies candidate offsets where both boundary characters match. For each set bit identified via <code>_tzcnt_u32</code>, the engine performs scalar substring verification (<code>std::memcmp</code>) on intermediate characters [3]. This multi-stage filtering prunes non-matching candidate blocks rapidly before applying fuzzy ranking.</p>
 
-  <h3 class="subsec-heading">D. Write-Ahead Intent Logging (OperationJournal)</h3>
-  <p>Multi-file mutations (copy, move, rename, delete) are managed by the <code>OperationJournal</code> subsystem. Prior to disk mutation, operation intent records are flushed to an append-only journal file using <code>FILE_FLAG_WRITE_THROUGH</code> [5]. Intermediate data transfers utilize temporary <code>.gxpartial</code> files. If a process termination or crash occurs, the startup recovery daemon scans the journal and cleans up partial transfers or issues compensatory inverse operations.</p>
+  <h3 class="subsec-heading">D. Inverted Trigram Content Indexing</h3>
+  <p>For document content search, GodXplr implements a memory-compact positionless inverted trigram index [4]. Trigrams <i>t</i> = (<i>b</i><sub>1</sub>, <i>b</i><sub>2</sub>, <i>b</i><sub>3</sub>) extracted across UTF-8 file contents map to sorted posting lists of 32-bit Document IDs, evaluated via bitwise set intersections.</p>
 
-  <h3 class="subsec-heading">E. Cloud Placeholder Defense Subsystem</h3>
+  <h3 class="subsec-heading">E. File Operation Intent Logging (OperationJournal)</h3>
+  <p>Multi-file mutations are managed by the <code>OperationJournal</code> subsystem, which adopts the concept of write-ahead intent logging [5]. Prior to disk mutation, operation intent records are recorded in an in-memory journal and serialized to disk using binary file streams (<code>std::ofstream</code> with truncation). Intermediate file copies utilize temporary <code>.gxpartial</code> files. If a process termination or crash occurs, the startup recovery routine (<code>recoverInterruptedOperations</code>) scans the journal, unlinks any stranded <code>.gxpartial</code> files, and updates interrupted in-progress records to a rolled-back state.</p>
+
+  <h3 class="subsec-heading">F. Cloud Placeholder Defense Subsystem</h3>
   <p>Cloud placeholders managed by the Windows Cloud Filter API (e.g., OneDrive) are identified by querying directory attributes:</p>
   <div class="math-block">
     F<sub>cloud</sub> = (Attr &amp; 0x00440000) &or; (Attr &amp; FILE_ATTRIBUTE_OFFLINE)
-    <span class="eq-num">(3)</span>
+    <span class="eq-num">(4)</span>
   </div>
   <p>where <code>0x00440000</code> denotes the combination of <code>FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS</code> and <code>FILE_ATTRIBUTE_RECALL_ON_OPEN</code>. When <i>F</i><sub>cloud</sub> evaluates to true, data stream acquisition is intercepted and blocked, shielding network bandwidth and disk storage from unwanted mass-hydration cascades.</p>
 
-  <h3 class="subsec-heading">F. Row-Virtualized O(1) Viewport Projection</h3>
+  <h3 class="subsec-heading">G. Row-Virtualized O(1) Viewport Projection</h3>
   <p>Regardless of directory size, GodXplr instantiates zero child window handles per listed item. The visible row index range [<i>i</i><sub>start</sub>, <i>i</i><sub>end</sub>] is calculated in <i>O</i>(1) time relative to directory size <i>N</i>:</p>
   <div class="math-block">
     i<sub>start</sub> = &lfloor;y<sub>scroll</sub> / h<sub>row</sub>&rfloor;, &nbsp; i<sub>end</sub> = &lceil;(y<sub>scroll</sub> + H<sub>client</sub>) / h<sub>row</sub>&rceil;
-    <span class="eq-num">(4)</span>
+    <span class="eq-num">(5)</span>
   </div>
   <p>Only the active slice (typically 25–45 rows) is rendered onto an off-screen memory Device Context (DC) via double-buffered <code>BitBlt</code>, maintaining consistent frame rates.</p>
 
-  <h3 class="subsec-heading">G. Direct Manipulation Dynamics</h3>
+  <h3 class="subsec-heading">H. Direct Manipulation Dynamics & PDF Inspector</h3>
   <p>Direct manipulation boundary resistance follows Apple's formula [6]:</p>
   <div class="math-block">
     y<sub>overshoot</sub> = (1.0 - 1.0 / ((y<sub>pull</sub> &middot; 0.55 / H<sub>viewport</sub>) + 1.0)) &middot; H<sub>viewport</sub>
-    <span class="eq-num">(5)</span>
+    <span class="eq-num">(6)</span>
   </div>
-  <p>decaying via a 16 ms multimedia timer ($y_{\text{overshoot}}^{(t+1)} = y_{\text{overshoot}}^{(t)} \times 0.68$). Instant pointer-down feedback (<code>isPressed_</code>) applies a 1-pixel inset depression on <code>WM_LBUTTONDOWN</code> before release commit, keeping interaction latency under 16 ms.</p>
+  <p>decaying via a 16 ms multimedia timer ($y_{\text{overshoot}}^{(t+1)} = y_{\text{overshoot}}^{(t)} \times 0.68$). Instant pointer-down feedback (<code>isPressed_</code>) applies a 1-pixel inset depression on <code>WM_LBUTTONDOWN</code> before release commit, keeping interaction latency under 16 ms. Document inspection utilizes stream dictionary parsing [7], skipping font programs and image masks to display text previews without spawning external viewer processes.</p>
 
   <h2 class="sec-heading">VI. Features & Functional Verification</h2>
   <p>The functional capabilities of GodXplr are illustrated across genuine application screenshots captured in the demonstration environment (<code>IEEE_Demo/</code>).</p>
@@ -390,7 +406,7 @@
 
   <h2 class="sec-heading">VII. Testing & Performance Evaluation</h2>
   <h3 class="subsec-heading">A. Benchmarking Methodology</h3>
-  <p>Benchmarks were executed on a dedicated Windows 11 host (Build 26200) powered by an Intel Core i5-13450HX CPU (16 logical cores, AVX2 enabled), 24 GB DDR5 RAM, and an NVMe PCIe 4.0 SSD formatted with NTFS. Workloads were generated deterministically using a synthetic in-memory dataset generator (Spec 03 &sect;16.1, Seed: 42) with an 8% directory / 92% file distribution across documents, source code, media, and archive formats. Each latency scenario was measured over 10 to 100 consecutive iterations.</p>
+  <p>Benchmarks were executed on a dedicated Windows 11 host (Build 26200) powered by an Intel Core i5-13450HX CPU (16 logical cores, AVX2 enabled), 24 GB DDR5 RAM, and an NVMe PCIe 4.0 SSD formatted with NTFS. Workloads were generated deterministically using a synthetic in-memory dataset generator (Spec 03 &sect;16.1, Seed: 42) with an 8% directory / 92% file distribution across documents, source code, media, and archive formats. Ingestion benchmarks were executed over 10 iterations; sorting benchmarks over 20 iterations; and SIMD search queries over 100 iterations.</p>
 
   <h3 class="subsec-heading">B. Latency and Memory Measurements</h3>
   <p>Table II records observed latencies across scaled workloads.</p>
@@ -399,8 +415,9 @@
   <table class="ieee-table">
     <thead>
       <tr>
-        <th>Workload</th>
+        <th>Benchmark Scenario</th>
         <th>Entries</th>
+        <th>Iters</th>
         <th><i>p</i><sub>50</sub> Latency</th>
         <th><i>p</i><sub>95</sub> Latency</th>
         <th>Working Set</th>
@@ -408,29 +425,33 @@
     </thead>
     <tbody>
       <tr>
-        <td>Dataset Ingest</td>
+        <td>Dataset Ingest (10k)</td>
         <td>10,000</td>
+        <td>10</td>
         <td>5.11 ms</td>
         <td>8.79 ms</td>
         <td>15.2 MB</td>
       </tr>
       <tr>
-        <td>Dataset Ingest</td>
+        <td>Dataset Ingest (100k)</td>
         <td>100,000</td>
+        <td>10</td>
         <td>54.92 ms</td>
         <td>59.21 ms</td>
         <td>23.9 MB</td>
       </tr>
       <tr>
-        <td>Lexical Sort</td>
+        <td>Lexical Sort (100k)</td>
         <td>100,000</td>
+        <td>20</td>
         <td>60.21 ms</td>
         <td>71.47 ms</td>
         <td>24.1 MB</td>
       </tr>
       <tr class="last-row">
-        <td><b>SIMD Search</b></td>
+        <td><b>SIMD Search (100k)</b></td>
         <td><b>100,000</b></td>
+        <td><b>100</b></td>
         <td><b>0.655 ms</b></td>
         <td><b>0.690 ms</b></td>
         <td><b>24.1 MB</b></td>
@@ -439,7 +460,7 @@
   </table>
 
   <h3 class="subsec-heading">C. Memory Metric Reconciliation</h3>
-  <p>The raw index payload occupies 132.5 bytes per entry (13.25 MB for 100,000 records). The total process working set of GodXplr during this benchmark is 23.9 MB, which includes the C++ runtime heap, GDI drawing buffers, and UI window structures. Under identical directory scales, Windows 11 File Explorer exhibits a measured private working set of approximately 580 MB, establishing a 24.2&times; process memory reduction ratio (580 / 23.9 &approx; 24.2).</p>
+  <p>The raw index payload occupies an average of 132.5 bytes per entry (13.25 MB for 100,000 records). The total process private working set of GodXplr during this benchmark is 23.9 MB, which includes the C++ runtime heap, GDI drawing buffers, and UI window structures. Under an equivalent directory scale of 100,000 items, Windows 11 File Explorer exhibits a measured private working set of approximately 580 MB, establishing a 24.3&times; process memory reduction ratio (580 / 23.9 &approx; 24.267).</p>
 
   <h3 class="subsec-heading">D. Verification Suite</h3>
   <p>Table III lists representative verified test cases. The automated CTest harness validates 28 out of 28 unit and integration suites with a 100% pass rate in 5.53 seconds under MSVC <code>/W4 /WX</code>.</p>
@@ -469,8 +490,8 @@
       </tr>
       <tr>
         <td><b>FileOps.Engine</b></td>
-        <td>Crash midway move op</td>
-        <td>Journal rollback</td>
+        <td>Stranded .gxpartial file</td>
+        <td>Startup cleanup</td>
         <td>PASS</td>
       </tr>
       <tr>
@@ -489,25 +510,25 @@
   </table>
 
   <h2 class="sec-heading">VIII. Results & Discussion</h2>
-  <p>The empirical results demonstrate that GodXplr addresses the primary latency and memory bottlenecks of desktop file managers. Direct NTFS USN tailing avoids slow directory tree seeks, while AVX2 vectorization enables sub-millisecond query evaluation. Additionally, row-virtualized GDI rendering ensures that scrolling memory consumption remains constant regardless of folder size.</p>
+  <p>The empirical results demonstrate that GodXplr addresses the primary latency and memory bottlenecks of desktop file managers. Direct NTFS USN tailing avoids slow directory tree seeks, while 32-lane AVX2 vectorization enables sub-millisecond query evaluation. Additionally, row-virtualized GDI rendering ensures that scrolling memory consumption remains constant regardless of folder size.</p>
 
   <h2 class="sec-heading">IX. Limitations & Future Work</h2>
   <p>Direct volume MFT enumeration requires administrator elevation on Windows; when non-elevated, GodXplr falls back to querying the background indexing service via shared memory IPC. Future work involves extending the virtual provider architecture to Linux via eBPF kernel event tailing and macOS via FSEvents (Spec 10), as well as integrating Direct2D rendering backends for high-refresh 144 Hz displays.</p>
 
   <h2 class="sec-heading">X. Conclusion</h2>
-  <p>GodXplr demonstrates that a native C++20 desktop file manager can achieve high query throughput and low memory consumption without sacrificing visual responsiveness. By combining bulk-buffered NTFS MFT ingestion, 256-bit AVX2 SIMD needle filtering, write-ahead intent logging, cloud placeholder protection, and row-virtualized Win32 GDI rendering, GodXplr provides a robust, low-overhead alternative to conventional desktop shells.</p>
+  <p>GodXplr demonstrates that a native C++20 desktop file manager can achieve high query throughput and low memory consumption without sacrificing visual responsiveness. By combining bulk-buffered NTFS MFT ingestion, 32-lane AVX2 SIMD needle filtering, file operation intent logging with startup recovery, cloud placeholder protection, and row-virtualized Win32 GDI rendering, GodXplr provides a robust, low-overhead alternative to conventional desktop shells [10].</p>
 
   <h2 class="sec-heading">References</h2>
   <div class="ref-list">
     <div class="ref-item">[1] Microsoft Corporation, "Change Journals (Windows Drivers and Win32)," <i>Microsoft Learn Documentation</i>, 2024.</div>
-    <div class="ref-item">[2] Intel Corporation, "Intel 64 and IA-32 Architectures Software Developer's Manual Volume 2: Instruction Set Reference," <i>Intel Corp.</i>, 2023.</div>
+    <div class="ref-item">[2] Intel Corporation, "Intel 64 and IA-32 Architectures Software Developer's Manual Volume 2: Instruction Set Reference," <i>Intel Corp.</i>, Order No. 325383-082US, 2023.</div>
     <div class="ref-item">[3] D. E. Knuth, J. H. Morris, Jr., and V. R. Pratt, "Fast Pattern Matching in Strings," <i>SIAM Journal on Computing</i>, vol. 6, no. 2, pp. 323–350, 1977.</div>
     <div class="ref-item">[4] J. Zobel and A. Moffat, "Inverted files for text search engines," <i>ACM Computing Surveys (CSUR)</i>, vol. 38, no. 2, pp. 6-es, 2006.</div>
-    <div class="ref-item">[5] C. Mohan et al., "ARIES: A transaction recovery method supporting fine-granularity locking and partial rollbacks using write-ahead logging," <i>ACM Transactions on Database Systems (TODS)</i>, vol. 17, no. 1, pp. 94–162, 1992.</div>
-    <div class="ref-item">[6] Apple Inc., "Human Interface Guidelines: Materials, Motion, and Sensory Feedback," <i>Apple Developer</i>, 2024.</div>
+    <div class="ref-item">[5] C. Mohan, D. Haderle, B. Lindsay, H. Pirahesh, and P. Schwarz, "ARIES: A transaction recovery method supporting fine-granularity locking and partial rollbacks using write-ahead logging," <i>ACM TODS</i>, vol. 17, no. 1, pp. 94–162, 1992.</div>
+    <div class="ref-item">[6] Apple Inc., "Human Interface Guidelines: Materials, Motion, and Sensory Feedback," <i>Apple Developer Documentation</i>, 2024.</div>
     <div class="ref-item">[7] Adobe Systems Inc., "Document Management -- Portable Document Format -- Part 1: PDF 1.7," <i>ISO Standard 32000-1:2008</i>, 2008.</div>
-    <div class="ref-item">[8] D. A. Patterson, G. Gibson, and R. H. Katz, "A case for redundant arrays of inexpensive disks (RAID)," in <i>Proc. ACM SIGMOD</i>, 1988, pp. 109–116.</div>
-    <div class="ref-item">[9] M. Russinovich, D. A. Solomon, and A. Ionescu, <i>Windows Internals, Part 2</i>, 7th ed. Microsoft Press, 2021.</div>
+    <div class="ref-item">[8] A. Silberschatz, P. B. Galvin, and G. Gagne, <i>Operating System Concepts</i>, 10th ed. John Wiley &amp; Sons, 2018.</div>
+    <div class="ref-item">[9] M. Russinovich, D. A. Solomon, and A. Ionescu, <i>Windows Internals, Part 2: File Systems, Storage, Management, and Security</i>, 7th ed. Microsoft Press, 2021.</div>
     <div class="ref-item">[10] S. Prasad, "GodXplr: High-Performance Zero-Hydration Native Windows Explorer Architecture," GitHub Repository, 2026. [Online]: https://github.com/shreyansh-prasad/GodXplr.git</div>
   </div>
 
