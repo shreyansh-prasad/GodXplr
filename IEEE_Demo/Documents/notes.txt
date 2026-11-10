@@ -1,0 +1,1 @@
+Meeting notes: Implement SIMD AVX2 substring search and WAL operations.
