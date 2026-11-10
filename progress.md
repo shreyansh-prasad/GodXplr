@@ -1,8 +1,8 @@
 # GodXplr — Project Progress Ledger
 
 **Last updated:** 2026-11-10  
-**Overall status:** ALL PHASES P00 THROUGH P23 COMPLETE (28/28 CTests passing 100%) — GODXPLR FULLY VALIDATED  
-**Current phase:** PRODUCTION READY — NATIVE PDF CONTENT INSPECTOR & INTERACTIVE PANEL RESIZING SUITE DELIVERED  
+**Overall status:** ALL PHASES P00 THROUGH P24 COMPLETE (28/28 CTests passing 100%) — GODXPLR FULLY VALIDATED  
+**Current phase:** PRODUCTION READY — APPLE DESIGN SYSTEM (MACOS SONOMA / SEQUOIA & VISIONOS LIQUID GLASS) DELIVERED  
 **Next action:** Final review with user.
 
 ## 1. Truthful project status
@@ -70,6 +70,7 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 | P21 | Liquid Glass Quick Look & Deep Multi-Tier Recommendation Search | PASS | Apple visionOS Liquid Glass 420px Quick Look preview panel (Syntax Code Inspector with line gutters & keyword coloring, live folder child inspection, structured metadata key-value card, glass action dock), Deep recursive subfolder search, Multi-tier approximate recommendation search with typo tolerance and recommendation banner (28/28 CTests pass) |
 | P22 | This PC Storage & Health Overview, Maintenance Deck & Telemetry | PASS | `docs/reports/P22-completion.md` (This PC storage dashboard, drive meters with NTFS badges, 4-tool maintenance action deck, status bar storage telemetry lens, 1-click view switcher, tab close [×], and professional keyboard shortcuts; 28/28 CTests pass) |
 | P23 | Native PDF Document Content Inspector & Multi-Mode Panel Width Adjustment | PASS | `docs/reports/P23-completion.md` (Pure C++20 RFC 1951 Deflate inflator & PDF text stream parser, high-fidelity Executive Document Reader Canvas in Quick Look Liquid Glass panel, 4-button header width adjusters, interactive mouse drag-to-resize splitters, Ctrl+[/]/0 keyboard shortcuts, and responsive action dock; 28/28 CTests pass 100%) |
+| P24 | Apple Design System UI/UX Foundations (macOS & visionOS Liquid Glass) | PASS | `docs/reports/P24-completion.md` (Sub-16ms pointer depression feedback, macOS traffic light window controls, rubber-banding physics with decay spring timer, optical typography tracking, 3-tier material weights, top specular highlights, and squircle glass cards; 28/28 CTests pass 100%) |
 
 ## 4. Completed phase reports
 
@@ -84,6 +85,8 @@ This ledger records the verified state of the GodXplr codebase and phase gates.
 - `docs/reports/P08-completion.md` (Icons, thumbnails, previews, extraction pipeline)
 - `apple_preview_and_photo_gallery.md` (Photo Thumbnail Gallery Grid View, Apple Glassmorphic Live Hover Preview Panel, View Dropdown Menu)
 - `docs/reports/P22-completion.md` (This PC Storage & Health Overview, Maintenance Deck & Telemetry)
+- `docs/reports/P23-completion.md` (Native PDF Document Content Inspector & Multi-Mode Panel Width Adjustment)
+- `docs/reports/P24-completion.md` (Apple Design System UI/UX Foundations — macOS & visionOS Liquid Glass)
 
 ## 5. How to update this file
 

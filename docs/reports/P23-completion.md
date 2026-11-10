@@ -83,3 +83,4 @@ The implementation was delivered with zero external third-party dependencies, st
   - `godxplr_pdf_preview_standard.png`: Displays 420px Quick Look panel with extracted document text and structured metadata.
   - `godxplr_pdf_preview_widened.png`: Displays 580px widened view with spacious canvas and responsive 4-action dock.
   - `godxplr_pdf_preview_narrowed.png`: Displays 340px compact view with ellipsis and scaled capsules.
+

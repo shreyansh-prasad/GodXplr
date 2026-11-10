@@ -325,6 +325,12 @@ void drawRoundedRect(HDC hdc, const RECT& rc, int radius, COLORREF fillColor, CO
     DeleteObject(pen);
 }
 
+// Apple Fluid Motion: Exact Rubberband Formula (WWDC Designing Fluid Interfaces / apple-design §9)
+static inline double appleRubberband(double overshoot, double dimension, double constant = 0.55) {
+    if (dimension <= 0.0) dimension = 100.0;
+    return (overshoot * dimension * constant) / (dimension + constant * std::abs(overshoot));
+}
+
 bool getImageDimensions(const std::wstring& path, uint32_t& outW, uint32_t& outH) {
     std::ifstream f(path, std::ios::binary);
     if (!f.is_open()) return false;
@@ -523,6 +529,127 @@ MainWindow::~MainWindow() {
     if (fontIconsSmall_) DeleteObject(fontIconsSmall_);
     if (fontCode_) DeleteObject(fontCode_);
     if (darkEditBrush_) DeleteObject(darkEditBrush_);
+}
+
+void MainWindow::drawAppleGlassCard(HDC hdc, const RECT& rc, int radius, COLORREF topGrad, COLORREF botGrad, COLORREF borderColor, COLORREF topHighlight, bool isPressed) {
+    RECT drawRc = rc;
+    if (isPressed) {
+        OffsetRect(&drawRc, 0, 1);
+    }
+
+    // 1. Soft Diffused Ambient Drop Shadow (Apple Depth Foundation §12)
+    if (!isPressed) {
+        RECT shadowRc{drawRc.left + 2, drawRc.top + 3, drawRc.right + 2, drawRc.bottom + 4};
+        HBRUSH shadowBr = CreateSolidBrush(RGB(10, 12, 16));
+        HPEN nullPen = CreatePen(PS_NULL, 0, RGB(0, 0, 0));
+        HGDIOBJ oldBr = SelectObject(hdc, shadowBr);
+        HGDIOBJ oldPn = SelectObject(hdc, nullPen);
+        RoundRect(hdc, shadowRc.left, shadowRc.top, shadowRc.right, shadowRc.bottom, radius + 2, radius + 2);
+        SelectObject(hdc, oldBr);
+        SelectObject(hdc, oldPn);
+        DeleteObject(shadowBr);
+        DeleteObject(nullPen);
+    }
+
+    // 2. Translucent Glass Surface with Vertical Gradient
+    int h = drawRc.bottom - drawRc.top;
+    if (h > 0) {
+        COLORREF fillBase = isPressed ? RGB(18, 22, 30) : botGrad;
+        drawRoundedRect(hdc, drawRc, radius, fillBase, isPressed ? RGB(0, 113, 227) : borderColor);
+
+        int gradSteps = std::min(h / 2, 28);
+        for (int step = 1; step < gradSteps; ++step) {
+            int y = drawRc.top + step;
+            double t = 1.0 - static_cast<double>(step) / gradSteps;
+            int r = static_cast<int>(GetRValue(botGrad) + (GetRValue(topGrad) - GetRValue(botGrad)) * t);
+            int g = static_cast<int>(GetGValue(botGrad) + (GetGValue(topGrad) - GetGValue(botGrad)) * t);
+            int b = static_cast<int>(GetBValue(botGrad) + (GetBValue(topGrad) - GetBValue(botGrad)) * t);
+            if (isPressed) {
+                r = std::max(0, r - 8);
+                g = std::max(0, g - 8);
+                b = std::max(0, b - 8);
+            }
+            int inset = (step < radius / 2) ? (radius / 2 - step) : 1;
+            RECT lineRc{drawRc.left + inset + 1, y, drawRc.right - inset - 1, y + 1};
+            HBRUSH lbr = CreateSolidBrush(RGB(r, g, b));
+            FillRect(hdc, &lineRc, lbr);
+            DeleteObject(lbr);
+        }
+    }
+
+    // 3. Ambient Specular Top Edge Light Highlight Line (apple-design §12: light catching the material)
+    if (!isPressed) {
+        HPEN specPen = CreatePen(PS_SOLID, 1, topHighlight);
+        HGDIOBJ oldP = SelectObject(hdc, specPen);
+        MoveToEx(hdc, drawRc.left + radius / 2, drawRc.top + 1, nullptr);
+        LineTo(hdc, drawRc.right - radius / 2, drawRc.top + 1);
+        SelectObject(hdc, oldP);
+        DeleteObject(specPen);
+    }
+}
+
+void MainWindow::drawApplePill(HDC hdc, const RECT& rc, COLORREF fillCol, COLORREF borderCol, COLORREF topHighlight, bool isPressed) {
+    RECT drawRc = rc;
+    if (isPressed) {
+        OffsetRect(&drawRc, 0, 1);
+    }
+    int radius = std::min(drawRc.right - drawRc.left, drawRc.bottom - drawRc.top);
+    COLORREF activeFill = isPressed ? RGB(std::max(0, GetRValue(fillCol) - 15), std::max(0, GetGValue(fillCol) - 15), std::max(0, GetBValue(fillCol) - 15)) : fillCol;
+    COLORREF activeBorder = isPressed ? RGB(0, 113, 227) : borderCol;
+    drawRoundedRect(hdc, drawRc, radius, activeFill, activeBorder);
+
+    if (!isPressed && topHighlight != RGB(0, 0, 0)) {
+        HPEN specPen = CreatePen(PS_SOLID, 1, topHighlight);
+        HGDIOBJ oldP = SelectObject(hdc, specPen);
+        MoveToEx(hdc, drawRc.left + radius / 3, drawRc.top + 1, nullptr);
+        LineTo(hdc, drawRc.right - radius / 3, drawRc.top + 1);
+        SelectObject(hdc, oldP);
+        DeleteObject(specPen);
+    }
+}
+
+void MainWindow::drawAppleTrafficLights(HDC hdc, bool isHovered, PressedTarget pressed) {
+    auto drawOneLight = [&](const RECT& rc, COLORREF baseCol, COLORREF borderCol, COLORREF glyphCol, const wchar_t* glyph, bool isPressed) {
+        RECT drawRc = rc;
+        if (isPressed) OffsetRect(&drawRc, 0, 1);
+
+        COLORREF fill = isPressed ? RGB(std::max(0, GetRValue(baseCol) - 40), std::max(0, GetGValue(baseCol) - 40), std::max(0, GetBValue(baseCol) - 40)) : baseCol;
+        HBRUSH br = CreateSolidBrush(fill);
+        HPEN pen = CreatePen(PS_SOLID, 1, borderCol);
+        HGDIOBJ oldBr = SelectObject(hdc, br);
+        HGDIOBJ oldPn = SelectObject(hdc, pen);
+
+        Ellipse(hdc, drawRc.left, drawRc.top, drawRc.right, drawRc.bottom);
+
+        // Specular inner sheen arc on top half
+        if (!isPressed) {
+            HPEN sheenPen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
+            SelectObject(hdc, sheenPen);
+            Arc(hdc, drawRc.left + 1, drawRc.top + 1, drawRc.right - 1, drawRc.bottom - 1,
+                drawRc.right - 2, drawRc.top + 4, drawRc.left + 2, drawRc.top + 4);
+            DeleteObject(sheenPen);
+        }
+
+        // Vector glyph on hover
+        if (isHovered && glyph && *glyph) {
+            SelectObject(hdc, fontSmall_);
+            SetTextColor(hdc, glyphCol);
+            RECT gRc = drawRc;
+            DrawTextW(hdc, glyph, 1, &gRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+
+        SelectObject(hdc, oldBr);
+        SelectObject(hdc, oldPn);
+        DeleteObject(br);
+        DeleteObject(pen);
+    };
+
+    // Close (#FF5F56, border #E0443E)
+    drawOneLight(trafficCloseRc_, RGB(255, 95, 86), RGB(224, 68, 62), RGB(100, 15, 15), L"×", pressed == PressedTarget::TrafficClose);
+    // Minimize (#FFBD2E, border #DEA123)
+    drawOneLight(trafficMinRc_, RGB(255, 189, 46), RGB(222, 161, 35), RGB(130, 80, 10), L"–", pressed == PressedTarget::TrafficMin);
+    // Zoom (#27C93F, border #1AAB29)
+    drawOneLight(trafficZoomRc_, RGB(39, 201, 63), RGB(26, 171, 41), RGB(10, 80, 20), L"+", pressed == PressedTarget::TrafficZoom);
 }
 
 void MainWindow::clearThumbnailCache() {
@@ -754,18 +881,21 @@ void MainWindow::toggleSidebarExpansion(size_t index) {
 void MainWindow::expandSidebarItem(size_t index) {
     if (index >= sidebarItems_.size()) return;
     auto& item = sidebarItems_[index];
-    if (!std::filesystem::exists(item.path)) return;
+    std::error_code ecExist;
+    if (!std::filesystem::exists(item.path, ecExist) || ecExist) return;
 
     item.isExpanded = true;
     int targetIndent = item.indentLevel + 1;
 
     std::vector<SidebarItem> children;
     try {
-        for (const auto& entry : std::filesystem::directory_iterator(item.path, std::filesystem::directory_options::skip_permission_denied)) {
+        std::error_code ecIter;
+        for (const auto& entry : std::filesystem::directory_iterator(item.path, std::filesystem::directory_options::skip_permission_denied, ecIter)) {
+            if (ecIter) break;
             std::error_code ec;
             if (entry.is_directory(ec)) {
                 std::wstring name = entry.path().filename().wstring();
-                if (!showHiddenItems_ && (name.front() == L'.' || (GetFileAttributesW(entry.path().c_str()) & FILE_ATTRIBUTE_HIDDEN))) {
+                if (!showHiddenItems_ && (!name.empty() && name.front() == L'.' || (GetFileAttributesW(entry.path().c_str()) & FILE_ATTRIBUTE_HIDDEN))) {
                     continue;
                 }
 
@@ -964,7 +1094,8 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
             wchar_t pathBuf[MAX_PATH];
             GetWindowTextW(editAddress_, pathBuf, MAX_PATH);
             std::filesystem::path p(pathBuf);
-            if (std::filesystem::exists(p)) {
+            std::error_code ec;
+            if (std::filesystem::exists(p, ec) && !ec) {
                 navigateTo(p);
             }
             ShowWindow(editAddress_, SW_HIDE);
@@ -1173,8 +1304,11 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 navigateToHome();
             } else if (item.path == L"godxplr://thispc") {
                 navigateToThisPc();
-            } else if (std::filesystem::exists(item.path)) {
-                navigateTo(std::filesystem::path(item.path));
+            } else {
+                std::error_code ec;
+                if (std::filesystem::exists(item.path, ec) && !ec) {
+                    navigateTo(std::filesystem::path(item.path));
+                }
             }
         }
         return 0;
@@ -1187,6 +1321,10 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
     case WM_USER + 112: // Navigate to This PC
         navigateToThisPc();
+        return 0;
+
+    case WM_USER + 114: // Navigate to Home
+        navigateToHome();
         return 0;
 
     case WM_USER + 113: { // Set preview pane width (wParam: target width, e.g. 520, 600, or 0 = reset 420)
@@ -1322,6 +1460,18 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
         onKeyDown(wParam);
         return 0;
 
+    case WM_TIMER:
+        if (wParam == 101 /* TIMER_RUBBERBAND */) {
+            overscrollY_ *= 0.68;
+            if (std::abs(overscrollY_) < 0.5) {
+                overscrollY_ = 0.0;
+                KillTimer(hwnd_, 101);
+            }
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return 0;
+        }
+        break;
+
     case WM_ERASEBKGND:
         return 1;
 
@@ -1385,21 +1535,160 @@ void MainWindow::onMouseWheel(short delta) {
     int visibleRows = std::max(1, surfaceHeight / rowHeight_);
     int maxScroll = std::max(0, count - visibleRows);
 
-    scrollOffset_ = std::clamp(scrollOffset_ + lines, 0, maxScroll);
+    int newOffset = scrollOffset_ + lines;
+    if (newOffset < 0) {
+        // Scrolled above top boundary -> soft rubber-banding resistance (apple-design §9)
+        double overshoot = static_cast<double>(-newOffset * 16);
+        overscrollY_ = std::min(45.0, appleRubberband(overshoot, static_cast<double>(surfaceHeight), 0.55));
+        scrollOffset_ = 0;
+        SetTimer(hwnd_, 101, 16, nullptr);
+    } else if (newOffset > maxScroll) {
+        // Scrolled below bottom boundary -> soft rubber-banding resistance (apple-design §9)
+        double overshoot = static_cast<double>((newOffset - maxScroll) * 16);
+        overscrollY_ = -std::min(45.0, appleRubberband(overshoot, static_cast<double>(surfaceHeight), 0.55));
+        scrollOffset_ = maxScroll;
+        SetTimer(hwnd_, 101, 16, nullptr);
+    } else {
+        scrollOffset_ = newOffset;
+    }
     updateScrollInfo();
     InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
 void MainWindow::onLButtonUp(int x, int y) {
     (void)x; (void)y;
+    if (GetCapture() == hwnd_) {
+        ReleaseCapture();
+    }
+
     if (isResizingPreviewPane_ || isResizingSidebar_) {
         isResizingPreviewPane_ = false;
         isResizingSidebar_ = false;
-        ReleaseCapture();
         RECT clientRc;
         GetClientRect(hwnd_, &clientRc);
         onResize(clientRc.right, clientRc.bottom);
         InvalidateRect(hwnd_, nullptr, FALSE);
+        return;
+    }
+
+    if (pressedTarget_ != PressedTarget::None) {
+        PressedTarget target = pressedTarget_;
+        int id = pressedId_;
+        pressedTarget_ = PressedTarget::None;
+        pressedId_ = -1;
+        InvalidateRect(hwnd_, nullptr, FALSE);
+
+        RECT clientRc;
+        GetClientRect(hwnd_, &clientRc);
+
+        switch (target) {
+        case PressedTarget::TrafficClose:
+            PostMessageW(hwnd_, WM_CLOSE, 0, 0);
+            return;
+        case PressedTarget::TrafficMin:
+            ShowWindow(hwnd_, SW_MINIMIZE);
+            return;
+        case PressedTarget::TrafficZoom: {
+            WINDOWPLACEMENT wp{};
+            wp.length = sizeof(wp);
+            GetWindowPlacement(hwnd_, &wp);
+            if (wp.showCmd == SW_MAXIMIZE) {
+                ShowWindow(hwnd_, SW_RESTORE);
+            } else {
+                ShowWindow(hwnd_, SW_MAXIMIZE);
+            }
+            return;
+        }
+        case PressedTarget::Tab:
+            if (id >= 0 && id < static_cast<int>(tabs_.size())) {
+                activeTab_ = static_cast<size_t>(id);
+                if (tabs_[id].path == L"godxplr://home") navigateToHome();
+                else if (tabs_[id].path == L"godxplr://thispc") navigateToThisPc();
+                else navigateTo(std::filesystem::path(tabs_[id].path));
+            }
+            return;
+        case PressedTarget::NewTab:
+            tabs_.push_back({ L"Home", L"godxplr://home" });
+            activeTab_ = tabs_.size() - 1;
+            navigateToHome();
+            return;
+        case PressedTarget::NavBack:
+            navigateBack();
+            return;
+        case PressedTarget::NavForward:
+            navigateForward();
+            return;
+        case PressedTarget::NavUp:
+            navigateUp();
+            return;
+        case PressedTarget::NavRefresh:
+            refresh();
+            return;
+        case PressedTarget::CmdBtn:
+            if (id == 1) cutSelectedItem();
+            else if (id == 2) copySelectedItem();
+            else if (id == 3) pasteItem();
+            else if (id == 4) renameSelectedItem();
+            else if (id == 6) deleteSelectedItem();
+            else if (id == 11) togglePreviewPane();
+            else if (id == 12) toggleDetailsPane();
+            return;
+        case PressedTarget::FilterPill:
+            if (id >= 0 && id < static_cast<int>(filterPills_.size())) {
+                setFilterCategory(filterPills_[id].cat);
+            }
+            return;
+        case PressedTarget::QuickCard:
+            if (id >= 0 && id < static_cast<int>(quickCards_.size())) {
+                std::error_code ec;
+                if (std::filesystem::exists(quickCards_[id].path, ec) && !ec) {
+                    navigateTo(std::filesystem::path(quickCards_[id].path));
+                }
+            }
+            return;
+        case PressedTarget::HomeSectionRecent:
+            homeSection_ = 0; filterAndSortItems(); InvalidateRect(hwnd_, nullptr, FALSE); return;
+        case PressedTarget::HomeSectionFav:
+            homeSection_ = 1; filterAndSortItems(); InvalidateRect(hwnd_, nullptr, FALSE); return;
+        case PressedTarget::HomeSectionShared:
+            homeSection_ = 2; filterAndSortItems(); InvalidateRect(hwnd_, nullptr, FALSE); return;
+        case PressedTarget::PaneClose:
+            showPreviewPane_ = false; onResize(clientRc.right, clientRc.bottom); InvalidateRect(hwnd_, nullptr, FALSE); return;
+        case PressedTarget::PaneNarrow:
+            previewPaneWidth_ = std::max(280, previewPaneWidth_ - 70); onResize(clientRc.right, clientRc.bottom); InvalidateRect(hwnd_, nullptr, FALSE); return;
+        case PressedTarget::PaneReset:
+            previewPaneWidth_ = 420; onResize(clientRc.right, clientRc.bottom); InvalidateRect(hwnd_, nullptr, FALSE); return;
+        case PressedTarget::PaneWiden:
+            previewPaneWidth_ = std::min<int>(static_cast<int>(clientRc.right) - sidebarWidth_ - 80, previewPaneWidth_ + 70); onResize(clientRc.right, clientRc.bottom); InvalidateRect(hwnd_, nullptr, FALSE); return;
+        case PressedTarget::ActionDockOpen:
+        case PressedTarget::ActionDockInFolder:
+        case PressedTarget::ActionDockCopyPath:
+        case PressedTarget::ActionDockCopyText: {
+            int targetIdx = (hoverRow_ >= 0 && hoverRow_ < static_cast<int>(filteredIndices_.size())) ? hoverRow_ : selectedRow_;
+            if (targetIdx >= 0 && targetIdx < static_cast<int>(filteredIndices_.size())) {
+                const auto& item = allItems_[filteredIndices_[targetIdx]];
+                std::filesystem::path fullP = !item.fullPath.empty()
+                    ? std::filesystem::path(item.fullPath)
+                    : (isHomeView_ ? std::filesystem::path(item.location) / item.name : currentPath_ / item.name);
+                if (target == PressedTarget::ActionDockOpen) {
+                    openItem(item);
+                } else if (target == PressedTarget::ActionDockInFolder) {
+                    showInFolder(fullP.wstring());
+                } else if (target == PressedTarget::ActionDockCopyPath) {
+                    copyTextToClipboard(fullP.wstring());
+                } else if (target == PressedTarget::ActionDockCopyText) {
+                    const auto& pdf = getOrLoadPdfInfo(fullP.wstring());
+                    std::wstring allText;
+                    for (const auto& line : pdf.lines) allText += line + L"\r\n";
+                    if (!allText.empty()) copyTextToClipboard(allText);
+                    else copyTextToClipboard(fullP.wstring());
+                }
+            }
+            return;
+        }
+        default:
+            break;
+        }
     }
 }
 
@@ -1423,6 +1712,25 @@ void MainWindow::onMouseMove(int x, int y) {
         onResize(clientRc.right, clientRc.bottom);
         InvalidateRect(hwnd_, nullptr, FALSE);
         return;
+    }
+
+    // Direct Manipulation: Cancel pressed feedback if pointer moves away by > 18px (apple-design §1, §10)
+    if (pressedTarget_ != PressedTarget::None) {
+        int dx = x - pressStartPt_.x;
+        int dy = y - pressStartPt_.y;
+        if (dx * dx + dy * dy > 324) { // 18^2
+            pressedTarget_ = PressedTarget::None;
+            pressedId_ = -1;
+            InvalidateRect(hwnd_, nullptr, FALSE);
+        }
+    }
+
+    // Apple macOS Traffic light hover tracking
+    bool oldTraffic = trafficHover_;
+    trafficHover_ = (x >= 12 && x <= 72 && y >= 10 && y <= 30);
+    if (oldTraffic != trafficHover_) {
+        RECT trc{12, 10, 72, 30};
+        InvalidateRect(hwnd_, &trc, FALSE);
     }
 
     int oldSidebar = sidebarHoverIndex_;
@@ -1547,9 +1855,35 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
     RECT clientRc;
     GetClientRect(hwnd_, &clientRc);
 
-    // 1. Tab Bar Clicks (y in 0 .. tabBarHeight_)
+    // 1. Tab Bar & macOS Traffic Lights (y in 0 .. tabBarHeight_)
     if (y < tabBarHeight_) {
-        int tabX = 12;
+        // Traffic lights hit testing (apple-design §16)
+        if (PtInRect(&trafficCloseRc_, POINT{x, y})) {
+            pressedTarget_ = PressedTarget::TrafficClose;
+            pressedId_ = 0;
+            pressStartPt_ = {x, y};
+            SetCapture(hwnd_);
+            InvalidateRect(hwnd_, &trafficCloseRc_, FALSE);
+            return;
+        }
+        if (PtInRect(&trafficMinRc_, POINT{x, y})) {
+            pressedTarget_ = PressedTarget::TrafficMin;
+            pressedId_ = 0;
+            pressStartPt_ = {x, y};
+            SetCapture(hwnd_);
+            InvalidateRect(hwnd_, &trafficMinRc_, FALSE);
+            return;
+        }
+        if (PtInRect(&trafficZoomRc_, POINT{x, y})) {
+            pressedTarget_ = PressedTarget::TrafficZoom;
+            pressedId_ = 0;
+            pressStartPt_ = {x, y};
+            SetCapture(hwnd_);
+            InvalidateRect(hwnd_, &trafficZoomRc_, FALSE);
+            return;
+        }
+
+        int tabX = 86;
         for (size_t i = 0; i < tabs_.size(); ++i) {
             RECT tabRc{tabX, 4, tabX + 180, tabBarHeight_};
             if (x >= tabRc.left && x < tabRc.right) {
@@ -1563,14 +1897,10 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
                     InvalidateRect(hwnd_, nullptr, FALSE);
                     return;
                 }
-                activeTab_ = i;
-                if (tabs_[i].path == L"godxplr://home") {
-                    navigateToHome();
-                } else if (tabs_[i].path == L"godxplr://thispc") {
-                    navigateToThisPc();
-                } else {
-                    navigateTo(std::filesystem::path(tabs_[i].path));
-                }
+                pressedTarget_ = PressedTarget::Tab;
+                pressedId_ = static_cast<int>(i);
+                pressStartPt_ = {x, y};
+                SetCapture(hwnd_);
                 InvalidateRect(hwnd_, nullptr, FALSE);
                 return;
             }
@@ -1580,10 +1910,11 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
         // New Tab (+) button
         RECT newTabRc{tabX, 4, tabX + 34, tabBarHeight_};
         if (x >= newTabRc.left && x < newTabRc.right) {
-            tabs_.push_back({ L"Home", L"godxplr://home" });
-            activeTab_ = tabs_.size() - 1;
-            navigateToHome();
-            InvalidateRect(hwnd_, nullptr, FALSE);
+            pressedTarget_ = PressedTarget::NewTab;
+            pressedId_ = 0;
+            pressStartPt_ = {x, y};
+            SetCapture(hwnd_);
+            InvalidateRect(hwnd_, &newTabRc, FALSE);
             return;
         }
         return;
@@ -1593,11 +1924,37 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
     int navTop = tabBarHeight_;
     int navBottom = navTop + navBarHeight_;
     if (y >= navTop && y < navBottom) {
-        if (x >= 12 && x < 46) navigateBack();
-        else if (x >= 50 && x < 84) navigateForward();
-        else if (x >= 88 && x < 122) navigateUp();
-        else if (x >= 126 && x < 160) refresh();
-        else {
+        if (x >= 12 && x < 46) {
+            if (!backStack_.empty()) {
+                pressedTarget_ = PressedTarget::NavBack;
+                pressStartPt_ = {x, y};
+                SetCapture(hwnd_);
+                InvalidateRect(hwnd_, nullptr, FALSE);
+            }
+            return;
+        } else if (x >= 50 && x < 84) {
+            if (!forwardStack_.empty()) {
+                pressedTarget_ = PressedTarget::NavForward;
+                pressStartPt_ = {x, y};
+                SetCapture(hwnd_);
+                InvalidateRect(hwnd_, nullptr, FALSE);
+            }
+            return;
+        } else if (x >= 88 && x < 122) {
+            if (!isHomeView_ && !isThisPcView_) {
+                pressedTarget_ = PressedTarget::NavUp;
+                pressStartPt_ = {x, y};
+                SetCapture(hwnd_);
+                InvalidateRect(hwnd_, nullptr, FALSE);
+            }
+            return;
+        } else if (x >= 126 && x < 160) {
+            pressedTarget_ = PressedTarget::NavRefresh;
+            pressStartPt_ = {x, y};
+            SetCapture(hwnd_);
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        } else {
             int rightMargin = (showDetailsPane_ ? detailsPaneWidth_ : (showPreviewPane_ ? previewPaneWidth_ : 0));
             int searchW = 280;
             int searchX = clientRc.right - rightMargin - searchW - 20;
@@ -1640,17 +1997,17 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
         if (x >= 12 && x < 112) {
             showNewMenu(x, cmdBottom);
         } else if (x >= 128 && x < 164) {
-            cutSelectedItem();
+            pressedTarget_ = PressedTarget::CmdBtn; pressedId_ = 1; pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
         } else if (x >= 168 && x < 204) {
-            copySelectedItem();
+            pressedTarget_ = PressedTarget::CmdBtn; pressedId_ = 2; pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
         } else if (x >= 208 && x < 244) {
-            pasteItem();
+            pressedTarget_ = PressedTarget::CmdBtn; pressedId_ = 3; pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
         } else if (x >= 248 && x < 284) {
-            renameSelectedItem();
+            pressedTarget_ = PressedTarget::CmdBtn; pressedId_ = 4; pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
         } else if (x >= 288 && x < 324) {
             // Share
         } else if (x >= 328 && x < 364) {
-            deleteSelectedItem();
+            pressedTarget_ = PressedTarget::CmdBtn; pressedId_ = 6; pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
         } else if (x >= 380 && x < 464) {
             showSortMenu(x, cmdBottom);
         } else if (x >= 472 && x < 604) {
@@ -1660,9 +2017,9 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
         } else if (x >= 716 && x < 754) {
             showMoreMenu(x, cmdBottom);
         } else if (x >= clientRc.right - 224 && x < clientRc.right - 118) {
-            togglePreviewPane();
+            pressedTarget_ = PressedTarget::CmdBtn; pressedId_ = 11; pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
         } else if (x >= clientRc.right - 110 && x < clientRc.right - 12) {
-            toggleDetailsPane();
+            pressedTarget_ = PressedTarget::CmdBtn; pressedId_ = 12; pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
         }
         return;
     }
@@ -1692,8 +2049,11 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
                         navigateToThisPc();
                     } else if (item.path == L"shell:RecycleBinFolder") {
                         ShellExecuteW(hwnd_, L"open", L"shell:RecycleBinFolder", nullptr, nullptr, SW_SHOWNORMAL);
-                    } else if (std::filesystem::exists(item.path)) {
-                        navigateTo(std::filesystem::path(item.path));
+                    } else {
+                        std::error_code ec;
+                        if (std::filesystem::exists(item.path, ec) && !ec) {
+                            navigateTo(std::filesystem::path(item.path));
+                        }
                     }
                     InvalidateRect(hwnd_, nullptr, FALSE);
                 }
@@ -1735,27 +2095,23 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
             // Header buttons (Widen, Reset, Narrow, Close)
             if (showPreviewPane_ && y >= contentTop + 10 && y < contentTop + 40) {
                 if (PtInRect(&btnPaneCloseRc_, POINT{x, y})) {
-                    showPreviewPane_ = false;
-                    onResize(clientRc.right, clientRc.bottom);
-                    InvalidateRect(hwnd_, nullptr, FALSE);
+                    pressedTarget_ = PressedTarget::PaneClose;
+                    pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
                     return;
                 }
                 if (PtInRect(&btnPaneNarrowRc_, POINT{x, y})) {
-                    previewPaneWidth_ = std::max(280, previewPaneWidth_ - 70);
-                    onResize(clientRc.right, clientRc.bottom);
-                    InvalidateRect(hwnd_, nullptr, FALSE);
+                    pressedTarget_ = PressedTarget::PaneNarrow;
+                    pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
                     return;
                 }
                 if (PtInRect(&btnPaneResetRc_, POINT{x, y})) {
-                    previewPaneWidth_ = 420;
-                    onResize(clientRc.right, clientRc.bottom);
-                    InvalidateRect(hwnd_, nullptr, FALSE);
+                    pressedTarget_ = PressedTarget::PaneReset;
+                    pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
                     return;
                 }
                 if (PtInRect(&btnPaneWidenRc_, POINT{x, y})) {
-                    previewPaneWidth_ = std::min<int>(static_cast<int>(clientRc.right) - sidebarWidth_ - 80, previewPaneWidth_ + 70);
-                    onResize(clientRc.right, clientRc.bottom);
-                    InvalidateRect(hwnd_, nullptr, FALSE);
+                    pressedTarget_ = PressedTarget::PaneWiden;
+                    pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
                     return;
                 }
             } else if (showDetailsPane_) {
@@ -1774,9 +2130,6 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
                     int targetIdx = (hoverRow_ >= 0 && hoverRow_ < static_cast<int>(filteredIndices_.size())) ? hoverRow_ : selectedRow_;
                     if (targetIdx >= 0 && targetIdx < static_cast<int>(filteredIndices_.size())) {
                         const auto& item = allItems_[filteredIndices_[targetIdx]];
-                        std::filesystem::path fullP = !item.fullPath.empty()
-                            ? std::filesystem::path(item.fullPath)
-                            : (isHomeView_ ? std::filesystem::path(item.location) / item.name : currentPath_ / item.name);
                         bool isPdf = (!item.isDirectory && toLower(item.extension) == L"pdf");
 
                         int availW = (clientRc.right - 16) - (paneX + 16);
@@ -1786,47 +2139,36 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
 
                         RECT b1{paneX + 16, btnY, paneX + 16 + singleW, btnY + 36};
                         if (PtInRect(&b1, POINT{x, y})) {
-                            openItem(item);
+                            pressedTarget_ = PressedTarget::ActionDockOpen;
+                            pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
                             return;
                         }
 
                         RECT b2{b1.right + spacing, btnY, b1.right + spacing + singleW, btnY + 36};
                         if (PtInRect(&b2, POINT{x, y})) {
-                            showInFolder(fullP.wstring());
+                            pressedTarget_ = PressedTarget::ActionDockInFolder;
+                            pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
                             return;
                         }
 
                         if (numBtns == 4) {
                             RECT b3{b2.right + spacing, btnY, b2.right + spacing + singleW, btnY + 36};
                             if (PtInRect(&b3, POINT{x, y})) {
-                                copyTextToClipboard(fullP.wstring());
+                                pressedTarget_ = PressedTarget::ActionDockCopyPath;
+                                pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
                                 return;
                             }
                             RECT b4{b3.right + spacing, btnY, clientRc.right - 16, btnY + 36};
                             if (PtInRect(&b4, POINT{x, y})) {
-                                const auto& pdf = getOrLoadPdfInfo(fullP.wstring());
-                                std::wstring allText;
-                                for (const auto& line : pdf.lines) {
-                                    allText += line + L"\r\n";
-                                }
-                                if (!allText.empty()) copyTextToClipboard(allText);
+                                pressedTarget_ = PressedTarget::ActionDockCopyText;
+                                pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
                                 return;
                             }
                         } else {
                             RECT b3{b2.right + spacing, btnY, clientRc.right - 16, btnY + 36};
                             if (PtInRect(&b3, POINT{x, y})) {
-                                if (isPdf) {
-                                    const auto& pdf = getOrLoadPdfInfo(fullP.wstring());
-                                    std::wstring allText;
-                                    for (const auto& line : pdf.lines) {
-                                        allText += line + L"\r\n";
-                                    }
-                                    if (!allText.empty()) {
-                                        copyTextToClipboard(allText);
-                                        return;
-                                    }
-                                }
-                                copyTextToClipboard(fullP.wstring());
+                                pressedTarget_ = isPdf ? PressedTarget::ActionDockCopyText : PressedTarget::ActionDockCopyPath;
+                                pressStartPt_ = {x, y}; SetCapture(hwnd_); InvalidateRect(hwnd_, nullptr, FALSE);
                                 return;
                             }
                         }
@@ -1839,9 +2181,13 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
 
     // 6. Directory View: 1-Click Quick Filter Pills Clicks
     if (!isHomeView_ && x >= sidebarWidth_ && y >= contentTop && y < contentTop + filterBarHeight_) {
-        for (const auto& pill : filterPills_) {
-            if (PtInRect(&pill.rect, POINT{x, y})) {
-                setFilterCategory(pill.cat);
+        for (size_t i = 0; i < filterPills_.size(); ++i) {
+            if (PtInRect(&filterPills_[i].rect, POINT{x, y})) {
+                pressedTarget_ = PressedTarget::FilterPill;
+                pressedId_ = static_cast<int>(i);
+                pressStartPt_ = {x, y};
+                SetCapture(hwnd_);
+                InvalidateRect(hwnd_, nullptr, FALSE);
                 return;
             }
         }
@@ -1870,11 +2216,13 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
     // 8. Home View: Quick Cards & Section Tabs Clicks
     if (isHomeView_ && !isSearching_ && x >= sidebarWidth_) {
         // Quick Cards
-        for (const auto& card : quickCards_) {
-            if (PtInRect(&card.rect, POINT{x, y})) {
-                if (std::filesystem::exists(card.path)) {
-                    navigateTo(std::filesystem::path(card.path));
-                }
+        for (size_t i = 0; i < quickCards_.size(); ++i) {
+            if (PtInRect(&quickCards_[i].rect, POINT{x, y})) {
+                pressedTarget_ = PressedTarget::QuickCard;
+                pressedId_ = static_cast<int>(i);
+                pressStartPt_ = {x, y};
+                SetCapture(hwnd_);
+                InvalidateRect(hwnd_, nullptr, FALSE);
                 return;
             }
         }
@@ -1882,18 +2230,21 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
         // Section Tabs: (Recent), (Favorites), (Shared)
         POINT pt{x, y};
         if (PtInRect(&pillRecentRc_, pt)) {
-            homeSection_ = 0;
-            filterAndSortItems();
+            pressedTarget_ = PressedTarget::HomeSectionRecent;
+            pressStartPt_ = {x, y};
+            SetCapture(hwnd_);
             InvalidateRect(hwnd_, nullptr, FALSE);
             return;
         } else if (PtInRect(&pillFavRc_, pt)) {
-            homeSection_ = 1;
-            filterAndSortItems();
+            pressedTarget_ = PressedTarget::HomeSectionFav;
+            pressStartPt_ = {x, y};
+            SetCapture(hwnd_);
             InvalidateRect(hwnd_, nullptr, FALSE);
             return;
         } else if (PtInRect(&pillSharedRc_, pt)) {
-            homeSection_ = 2;
-            filterAndSortItems();
+            pressedTarget_ = PressedTarget::HomeSectionShared;
+            pressStartPt_ = {x, y};
+            SetCapture(hwnd_);
             InvalidateRect(hwnd_, nullptr, FALSE);
             return;
         }
@@ -2440,19 +2791,20 @@ void MainWindow::navigateToHome() {
     std::vector<std::filesystem::path> scanDirs = { pathDownloads_, pathDocuments_, pathPictures_, pathDesktop_ };
 
     for (const auto& dir : scanDirs) {
-        if (dir.empty() || !std::filesystem::exists(dir)) continue;
+        std::error_code ec;
+        if (dir.empty() || !std::filesystem::exists(dir, ec) || ec) continue;
         try {
             int count = 0;
-            for (const auto& entry : std::filesystem::directory_iterator(dir, std::filesystem::directory_options::skip_permission_denied)) {
+            for (const auto& entry : std::filesystem::directory_iterator(dir, std::filesystem::directory_options::skip_permission_denied, ec)) {
+                if (ec) break;
                 if (count++ > 6) break;
                 FileItemDisplay item;
                 item.name = entry.path().filename().wstring();
                 item.fullPath = entry.path().wstring();
                 item.location = dir.filename().wstring();
-                std::error_code ec;
                 item.isDirectory = entry.is_directory(ec);
 
-                if (!showHiddenItems_ && (item.name.front() == L'.' || (GetFileAttributesW(entry.path().c_str()) & FILE_ATTRIBUTE_HIDDEN))) {
+                if (!showHiddenItems_ && (!item.name.empty() && item.name.front() == L'.' || (GetFileAttributesW(entry.path().c_str()) & FILE_ATTRIBUTE_HIDDEN))) {
                     continue;
                 }
 
@@ -2509,7 +2861,8 @@ void MainWindow::executeDeepSearch(const std::wstring& rawQuery) {
     currentSearchQuery_ = rawQuery;
 
     std::vector<std::filesystem::path> roots;
-    if (!isHomeView_ && !currentPath_.empty() && std::filesystem::exists(currentPath_)) {
+    std::error_code ecRoot;
+    if (!isHomeView_ && !currentPath_.empty() && std::filesystem::exists(currentPath_, ecRoot) && !ecRoot) {
         roots.push_back(currentPath_);
     } else {
         // Home view: search user profile directories and workspace
@@ -2518,7 +2871,8 @@ void MainWindow::executeDeepSearch(const std::wstring& rawQuery) {
             pathPictures_, pathVideos_, pathMusic_, L"C:\\os fileX"
         };
         for (const auto& d : homeDirs) {
-            if (!d.empty() && std::filesystem::exists(d)) {
+            std::error_code ecD;
+            if (!d.empty() && std::filesystem::exists(d, ecD) && !ecD) {
                 roots.push_back(d);
             }
         }
@@ -3274,73 +3628,101 @@ HICON MainWindow::getFileIcon(const std::wstring& path, bool isDir, const std::w
 
 void MainWindow::paintTabBar(HDC hdc, int width) {
     RECT tabAreaRc{0, 0, width, tabBarHeight_};
-    HBRUSH bgBrush = CreateSolidBrush(RGB(24, 24, 24));
+    HBRUSH bgBrush = CreateSolidBrush(RGB(19, 22, 30));
     FillRect(hdc, &tabAreaRc, bgBrush);
     DeleteObject(bgBrush);
 
+    // Subtle bottom divider for floating tab chrome
+    HPEN divPen = CreatePen(PS_SOLID, 1, RGB(36, 42, 56));
+    HGDIOBJ oldPen = SelectObject(hdc, divPen);
+    MoveToEx(hdc, 0, tabBarHeight_ - 1, nullptr);
+    LineTo(hdc, width, tabBarHeight_ - 1);
+    SelectObject(hdc, oldPen);
+    DeleteObject(divPen);
+
     SetBkMode(hdc, TRANSPARENT);
 
-    int tabX = 12;
+    // Apple macOS Finder Window Traffic Lights (apple-design §16: Familiarity)
+    drawAppleTrafficLights(hdc, trafficHover_, pressedTarget_);
+
+    int tabX = 86;
     for (size_t i = 0; i < tabs_.size(); ++i) {
         bool isActive = (i == activeTab_);
-        RECT tabRc{tabX, 4, tabX + 180, tabBarHeight_};
-
-        drawRoundedRect(hdc, tabRc, 8, isActive ? RGB(36, 36, 36) : RGB(27, 27, 27),
-            isActive ? RGB(45, 45, 45) : RGB(32, 32, 32));
+        bool isPressed = (pressedTarget_ == PressedTarget::Tab && pressedId_ == static_cast<int>(i));
+        RECT tabRc{tabX, 4, tabX + 180, tabBarHeight_ - 2};
 
         if (isActive) {
-            RECT indRc{tabRc.left + 10, tabRc.top, tabRc.right - 10, tabRc.top + 3};
-            HBRUSH acc = CreateSolidBrush(RGB(96, 205, 255));
+            drawAppleGlassCard(hdc, tabRc, 8, RGB(38, 44, 60), RGB(26, 32, 44), RGB(56, 68, 92), RGB(88, 105, 142), isPressed);
+            // Apple Blue top indicator
+            RECT indRc{tabRc.left + 12, tabRc.top, tabRc.right - 12, tabRc.top + 3};
+            HBRUSH acc = CreateSolidBrush(RGB(0, 113, 227));
             FillRect(hdc, &indRc, acc);
             DeleteObject(acc);
+        } else {
+            drawAppleGlassCard(hdc, tabRc, 8, RGB(26, 30, 40), RGB(20, 24, 32), RGB(38, 44, 58), RGB(50, 60, 80), isPressed);
         }
 
         SelectObject(hdc, fontIconsSmall_);
-        SetTextColor(hdc, isActive ? RGB(96, 205, 255) : RGB(160, 160, 160));
+        SetTextColor(hdc, isActive ? RGB(0, 113, 227) : RGB(150, 160, 180));
         RECT tabIconRc{tabRc.left + 12, tabRc.top, tabRc.left + 30, tabRc.bottom};
         const wchar_t* iconGlyph = (tabs_[i].title == L"Home") ? L"\uE80F" : L"\uE8B7";
         DrawTextW(hdc, iconGlyph, 1, &tabIconRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
         SelectObject(hdc, fontRegular_);
-        SetTextColor(hdc, isActive ? RGB(255, 255, 255) : RGB(175, 175, 175));
+        SetTextColor(hdc, isActive ? RGB(255, 255, 255) : RGB(180, 190, 210));
+        SetTextCharacterExtra(hdc, 0);
         RECT textRc{tabRc.left + 34, tabRc.top, tabRc.right - 28, tabRc.bottom};
         DrawTextW(hdc, tabs_[i].title.c_str(), -1, &textRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
 
         RECT closeRc{tabRc.right - 24, tabRc.top, tabRc.right - 8, tabRc.bottom};
-        SetTextColor(hdc, RGB(140, 140, 140));
+        SetTextColor(hdc, RGB(140, 150, 170));
         DrawTextW(hdc, L"×", 1, &closeRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
         tabX += 186;
     }
 
-    RECT plusRc{tabX, 4, tabX + 34, tabBarHeight_};
-    drawRoundedRect(hdc, plusRc, 6, RGB(30, 30, 30), RGB(38, 38, 38));
+    RECT plusRc{tabX, 4, tabX + 34, tabBarHeight_ - 2};
+    bool isPlusPressed = (pressedTarget_ == PressedTarget::NewTab);
+    drawApplePill(hdc, plusRc, RGB(28, 33, 44), RGB(46, 56, 76), RGB(68, 80, 108), isPlusPressed);
     SelectObject(hdc, fontIconsSmall_);
-    SetTextColor(hdc, RGB(200, 200, 200));
+    SetTextColor(hdc, RGB(210, 220, 240));
     DrawTextW(hdc, L"\uE710", 1, &plusRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
 void MainWindow::paintNavAndAddressBar(HDC hdc, int width) {
     int navTop = tabBarHeight_;
     RECT navRc{0, navTop, width, navTop + navBarHeight_};
-    HBRUSH navBrush = CreateSolidBrush(RGB(31, 31, 31));
+    HBRUSH navBrush = CreateSolidBrush(RGB(22, 26, 36));
     FillRect(hdc, &navRc, navBrush);
     DeleteObject(navBrush);
 
+    // Specular top light line catching the material (apple-design §12)
+    HPEN topPen = CreatePen(PS_SOLID, 1, RGB(56, 66, 90));
+    HGDIOBJ oldP = SelectObject(hdc, topPen);
+    MoveToEx(hdc, 0, navTop, nullptr);
+    LineTo(hdc, width, navTop);
+    SelectObject(hdc, oldP);
+    DeleteObject(topPen);
+
     SetBkMode(hdc, TRANSPARENT);
 
-    auto drawNavBtn = [&](int x, const wchar_t* iconGlyph, bool enabled = true) {
+    auto drawNavBtn = [&](int x, const wchar_t* iconGlyph, PressedTarget pt, bool enabled = true) {
         RECT rc{x, navTop + 8, x + 34, navTop + 42};
-        drawRoundedRect(hdc, rc, 6, RGB(38, 38, 38), RGB(46, 46, 46));
+        bool isPressed = (pressedTarget_ == pt);
+        drawAppleGlassCard(hdc, rc, 7,
+            isPressed ? RGB(18, 22, 30) : RGB(34, 40, 54),
+            isPressed ? RGB(14, 18, 24) : RGB(26, 30, 42),
+            isPressed ? RGB(0, 113, 227) : RGB(46, 56, 76),
+            RGB(68, 80, 108), isPressed);
         SelectObject(hdc, fontIcons_);
-        SetTextColor(hdc, enabled ? RGB(230, 230, 230) : RGB(110, 110, 110));
+        SetTextColor(hdc, enabled ? RGB(235, 240, 250) : RGB(105, 115, 135));
         DrawTextW(hdc, iconGlyph, 1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     };
 
-    drawNavBtn(12, L"\uE72B", !backStack_.empty());
-    drawNavBtn(50, L"\uE72A", !forwardStack_.empty());
-    drawNavBtn(88, L"\uE74A", (!isHomeView_ && !isThisPcView_));
-    drawNavBtn(126, L"\uE72C", true);
+    drawNavBtn(12, L"\uE72B", PressedTarget::NavBack, !backStack_.empty());
+    drawNavBtn(50, L"\uE72A", PressedTarget::NavForward, !forwardStack_.empty());
+    drawNavBtn(88, L"\uE74A", PressedTarget::NavUp, (!isHomeView_ && !isThisPcView_));
+    drawNavBtn(126, L"\uE72C", PressedTarget::NavRefresh, true);
 
     int rightMargin = (showDetailsPane_ ? detailsPaneWidth_ : (showPreviewPane_ ? previewPaneWidth_ : 0));
     int searchW = 280;
@@ -3351,14 +3733,14 @@ void MainWindow::paintNavAndAddressBar(HDC hdc, int width) {
     int boxY = navTop + (navBarHeight_ - boxH) / 2;
     RECT addrRc{addrX, boxY, addrX + addrW, boxY + boxH};
 
-    drawRoundedRect(hdc, addrRc, 8, RGB(41, 41, 41), RGB(58, 58, 58));
+    drawAppleGlassCard(hdc, addrRc, 8, RGB(26, 30, 42), RGB(20, 24, 34), RGB(48, 58, 80), RGB(72, 84, 114), false);
 
     breadcrumbs_.clear();
     int bcX = addrX + 12;
 
     if (isThisPcView_) {
         SelectObject(hdc, fontIconsSmall_);
-        SetTextColor(hdc, RGB(96, 205, 255));
+        SetTextColor(hdc, RGB(0, 113, 227));
         RECT pcIconRc{bcX, addrRc.top, bcX + 20, addrRc.bottom};
         DrawTextW(hdc, L"\uE7F4", 1, &pcIconRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         bcX += 22;
@@ -3372,7 +3754,7 @@ void MainWindow::paintNavAndAddressBar(HDC hdc, int width) {
         breadcrumbs_.push_back({ L"This PC", L"godxplr://thispc", fullPcRc });
     } else if (isHomeView_) {
         SelectObject(hdc, fontIconsSmall_);
-        SetTextColor(hdc, RGB(96, 205, 255));
+        SetTextColor(hdc, RGB(0, 113, 227));
         RECT homeIconRc{bcX, addrRc.top, bcX + 20, addrRc.bottom};
         DrawTextW(hdc, L"\uE80F", 1, &homeIconRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         bcX += 22;
@@ -3386,7 +3768,7 @@ void MainWindow::paintNavAndAddressBar(HDC hdc, int width) {
         breadcrumbs_.push_back({ L"Home", L"godxplr://home", fullHomeRc });
     } else {
         SelectObject(hdc, fontIconsSmall_);
-        SetTextColor(hdc, RGB(96, 205, 255));
+        SetTextColor(hdc, RGB(0, 113, 227));
         RECT homeIconRc{bcX, addrRc.top, bcX + 20, addrRc.bottom};
         DrawTextW(hdc, L"\uE80F", 1, &homeIconRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         breadcrumbs_.push_back({ L"Home", L"godxplr://home", homeIconRc });
@@ -3399,7 +3781,7 @@ void MainWindow::paintNavAndAddressBar(HDC hdc, int width) {
             if (partStr.back() == L'\\') partStr.pop_back();
 
             SelectObject(hdc, fontIconsSmall_);
-            SetTextColor(hdc, RGB(140, 140, 140));
+            SetTextColor(hdc, RGB(140, 150, 170));
             RECT chevRc{bcX, addrRc.top, bcX + 14, addrRc.bottom};
             DrawTextW(hdc, L"\uE76C", 1, &chevRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             bcX += 16;
@@ -3414,9 +3796,9 @@ void MainWindow::paintNavAndAddressBar(HDC hdc, int width) {
         }
     }
 
-    // Search Box Container
+    // Search Box Container (Spotlight Pill)
     RECT searchRc{searchX, boxY, searchX + searchW, boxY + boxH};
-    drawRoundedRect(hdc, searchRc, 8, RGB(41, 41, 41), RGB(58, 58, 58));
+    drawAppleGlassCard(hdc, searchRc, 8, RGB(26, 30, 42), RGB(20, 24, 34), RGB(48, 58, 80), RGB(72, 84, 114), false);
 
     wchar_t searchBuf[64]{};
     GetWindowTextW(editSearch_, searchBuf, 64);
@@ -3438,17 +3820,28 @@ void MainWindow::paintCommandBar(HDC hdc, int width) {
     int cmdTop = tabBarHeight_ + navBarHeight_;
     int cmdBottom = cmdTop + commandBarHeight_;
     RECT cmdRc{0, cmdTop, width, cmdBottom};
-    HBRUSH cmdBrush = CreateSolidBrush(RGB(28, 28, 28));
+    HBRUSH cmdBrush = CreateSolidBrush(RGB(24, 28, 38));
     FillRect(hdc, &cmdRc, cmdBrush);
     DeleteObject(cmdBrush);
+
+    // Ambient Specular top edge line (apple-design §12)
+    HPEN topPen = CreatePen(PS_SOLID, 1, RGB(56, 66, 90));
+    HGDIOBJ oldP = SelectObject(hdc, topPen);
+    MoveToEx(hdc, 0, cmdTop, nullptr);
+    LineTo(hdc, width, cmdTop);
+    SelectObject(hdc, oldP);
+    DeleteObject(topPen);
 
     SetBkMode(hdc, TRANSPARENT);
 
     auto drawBtnHoverOrActive = [&](const RECT& rc, int btnId, bool forceActive = false) {
-        if (forceActive) {
-            drawRoundedRect(hdc, rc, 6, RGB(27, 50, 72), RGB(96, 205, 255));
+        bool isPressed = (pressedTarget_ == PressedTarget::CmdBtn && pressedId_ == btnId);
+        if (isPressed) {
+            drawAppleGlassCard(hdc, rc, 7, RGB(18, 22, 30), RGB(14, 18, 24), RGB(0, 113, 227), RGB(56, 68, 92), true);
+        } else if (forceActive) {
+            drawAppleGlassCard(hdc, rc, 7, RGB(20, 52, 86), RGB(14, 38, 64), RGB(0, 113, 227), RGB(96, 205, 255), false);
         } else if (hoverCmdBtn_ == btnId) {
-            drawRoundedRect(hdc, rc, 6, RGB(44, 44, 44), RGB(56, 56, 56));
+            drawAppleGlassCard(hdc, rc, 7, RGB(38, 46, 64), RGB(28, 34, 48), RGB(56, 68, 92), RGB(78, 92, 124), false);
         }
     };
 
@@ -3597,11 +3990,11 @@ void MainWindow::paintFilterPills(HDC hdc, int width, int topY) {
     int effWidth = width - rightMargin;
 
     RECT barRc{sidebarWidth_, topY, effWidth, topY + filterBarHeight_};
-    HBRUSH bg = CreateSolidBrush(RGB(24, 24, 24));
+    HBRUSH bg = CreateSolidBrush(RGB(19, 23, 32));
     FillRect(hdc, &barRc, bg);
     DeleteObject(bg);
 
-    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(38, 38, 38));
+    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(36, 42, 58));
     SelectObject(hdc, borderPen);
     MoveToEx(hdc, sidebarWidth_, topY + filterBarHeight_ - 1, nullptr);
     LineTo(hdc, effWidth, topY + filterBarHeight_ - 1);
@@ -3614,21 +4007,26 @@ void MainWindow::paintFilterPills(HDC hdc, int width, int topY) {
         auto& pill = filterPills_[i];
         bool isActive = (pill.cat == filterCategory_);
         bool isHover = (static_cast<int>(i) == hoverPill_);
+        bool isPressed = (pressedTarget_ == PressedTarget::FilterPill && pressedId_ == static_cast<int>(i));
 
         int pillW = static_cast<int>(pill.label.size() * 9 + 42);
         pill.rect = RECT{pillX, topY + 5, pillX + pillW, topY + 35};
 
-        COLORREF fillCol = isActive ? RGB(27, 50, 72) : (isHover ? RGB(45, 45, 45) : RGB(33, 33, 33));
-        COLORREF borderCol = isActive ? RGB(96, 205, 255) : (isHover ? RGB(65, 65, 65) : RGB(48, 48, 48));
-        drawRoundedRect(hdc, pill.rect, 15, fillCol, borderCol);
+        if (isActive) {
+            drawApplePill(hdc, pill.rect, RGB(0, 113, 227), RGB(0, 113, 227), RGB(96, 175, 255), isPressed);
+        } else if (isHover) {
+            drawApplePill(hdc, pill.rect, RGB(36, 44, 60), RGB(56, 68, 92), RGB(78, 92, 120), isPressed);
+        } else {
+            drawApplePill(hdc, pill.rect, RGB(24, 29, 40), RGB(40, 48, 66), RGB(58, 68, 90), isPressed);
+        }
 
         SelectObject(hdc, fontIconsSmall_);
-        SetTextColor(hdc, isActive ? RGB(96, 205, 255) : (isHover ? RGB(255, 255, 255) : RGB(170, 170, 170)));
+        SetTextColor(hdc, isActive ? RGB(255, 255, 255) : (isHover ? RGB(96, 175, 255) : RGB(160, 175, 200)));
         RECT iRc{pill.rect.left + 10, pill.rect.top, pill.rect.left + 26, pill.rect.bottom};
         DrawTextW(hdc, pill.iconGlyph.c_str(), 1, &iRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
         SelectObject(hdc, fontSmall_);
-        SetTextColor(hdc, isActive ? RGB(96, 205, 255) : (isHover ? RGB(255, 255, 255) : RGB(210, 210, 210)));
+        SetTextColor(hdc, isActive ? RGB(255, 255, 255) : (isHover ? RGB(250, 250, 255) : RGB(200, 210, 225)));
         RECT tRc{pill.rect.left + 28, pill.rect.top, pill.rect.right - 10, pill.rect.bottom};
         DrawTextW(hdc, pill.label.c_str(), -1, &tRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
@@ -3641,7 +4039,7 @@ void MainWindow::paintSidebar(HDC hdc, int height) {
 
     int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
     RECT sideRc{0, contentTop, sidebarWidth_, height - statusBarHeight_};
-    HBRUSH bgBrush = CreateSolidBrush(RGB(24, 24, 24));
+    HBRUSH bgBrush = CreateSolidBrush(RGB(17, 20, 27));
     FillRect(hdc, &sideRc, bgBrush);
     DeleteObject(bgBrush);
 
@@ -3653,7 +4051,7 @@ void MainWindow::paintSidebar(HDC hdc, int height) {
 
         if (item.isHeader) {
             if (item.name.empty()) {
-                HPEN divPen = CreatePen(PS_SOLID, 1, RGB(44, 44, 44));
+                HPEN divPen = CreatePen(PS_SOLID, 1, RGB(36, 42, 56));
                 SelectObject(hdc, divPen);
                 MoveToEx(hdc, 16, itemY + 8, nullptr);
                 LineTo(hdc, sidebarWidth_ - 16, itemY + 8);
@@ -3662,8 +4060,10 @@ void MainWindow::paintSidebar(HDC hdc, int height) {
             } else {
                 RECT headerRc{16, itemY + 4, sidebarWidth_ - 16, itemY + 24};
                 SelectObject(hdc, fontSmall_);
-                SetTextColor(hdc, RGB(130, 130, 130));
+                SetTextColor(hdc, RGB(130, 142, 165));
+                SetTextCharacterExtra(hdc, 1); // Apple Optical Tracking §15
                 DrawTextW(hdc, item.name.c_str(), -1, &headerRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+                SetTextCharacterExtra(hdc, 0);
                 itemY += 26;
             }
             continue;
@@ -3674,13 +4074,9 @@ void MainWindow::paintSidebar(HDC hdc, int height) {
         bool isHov = (static_cast<int>(i) == sidebarHoverIndex_);
 
         if (isSel) {
-            drawRoundedRect(hdc, rowRc, 6, RGB(37, 37, 37), RGB(48, 48, 48));
-            RECT pill{rowRc.left + 2, rowRc.top + 6, rowRc.left + 5, rowRc.bottom - 6};
-            HBRUSH acc = CreateSolidBrush(RGB(96, 205, 255));
-            FillRect(hdc, &pill, acc);
-            DeleteObject(acc);
+            drawApplePill(hdc, rowRc, RGB(0, 113, 227), RGB(0, 113, 227), RGB(96, 175, 255), false);
         } else if (isHov) {
-            drawRoundedRect(hdc, rowRc, 6, RGB(32, 32, 32), RGB(40, 40, 40));
+            drawApplePill(hdc, rowRc, RGB(30, 36, 50), RGB(46, 56, 78), RGB(68, 80, 108), false);
         }
 
         int indentX = rowRc.left + item.indentLevel * 18;
@@ -3688,14 +4084,14 @@ void MainWindow::paintSidebar(HDC hdc, int height) {
         // Tree Chevron ('>' collapsed, 'v' expanded)
         if (item.isExpandable) {
             SelectObject(hdc, fontIconsSmall_);
-            SetTextColor(hdc, RGB(150, 150, 150));
+            SetTextColor(hdc, isSel ? RGB(255, 255, 255) : RGB(140, 150, 170));
             RECT chevRc{indentX, rowRc.top, indentX + 20, rowRc.bottom};
             DrawTextW(hdc, item.isExpanded ? L"\uE70D" : L"\uE76C", 1, &chevRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
 
         // Vector Icon
         SelectObject(hdc, fontIcons_);
-        SetTextColor(hdc, item.iconColor);
+        SetTextColor(hdc, isSel ? RGB(255, 255, 255) : item.iconColor);
         RECT iconRc{indentX + 22, rowRc.top, indentX + 46, rowRc.bottom};
         DrawTextW(hdc, item.iconGlyph.c_str(), 1, &iconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
@@ -3718,7 +4114,7 @@ void MainWindow::paintSidebar(HDC hdc, int height) {
             drawRoundedRect(hdc, miniFillRc, 2, RGB(0, 153, 255), RGB(0, 153, 255));
 
             SelectObject(hdc, fontSmall_);
-            SetTextColor(hdc, RGB(140, 155, 175));
+            SetTextColor(hdc, isSel ? RGB(210, 230, 255) : RGB(140, 155, 175));
             RECT freeRc{miniBarX + miniBarW + 6, rowRc.top + 18, sidebarWidth_ - 8, rowRc.bottom};
             DrawTextW(hdc, item.subtext.c_str(), -1, &freeRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
         } else {
@@ -3731,7 +4127,7 @@ void MainWindow::paintSidebar(HDC hdc, int height) {
         // Pinned item pin indicator
         if (i >= 11 && i <= 22) {
             SelectObject(hdc, fontIconsSmall_);
-            SetTextColor(hdc, RGB(120, 120, 120));
+            SetTextColor(hdc, isSel ? RGB(230, 240, 255) : RGB(120, 130, 150));
             RECT pinRc{sidebarWidth_ - 26, rowRc.top, sidebarWidth_ - 8, rowRc.bottom};
             DrawTextW(hdc, L"\uE718", 1, &pinRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
@@ -3739,7 +4135,7 @@ void MainWindow::paintSidebar(HDC hdc, int height) {
         itemY += 36;
     }
 
-    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(40, 40, 40));
+    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(38, 46, 64));
     SelectObject(hdc, borderPen);
     MoveToEx(hdc, sidebarWidth_ - 1, contentTop, nullptr);
     LineTo(hdc, sidebarWidth_ - 1, height - statusBarHeight_);
@@ -3788,9 +4184,11 @@ void MainWindow::paintHomeView(HDC hdc, int width, int height) {
     RECT titleRc{surfaceLeft + 36, contentTop + 14, surfaceLeft + 260, contentTop + 40};
     SelectObject(hdc, fontTitle_);
     SetTextColor(hdc, RGB(255, 255, 255));
+    SetTextCharacterExtra(hdc, -1); // Apple Optical Typography §15
     DrawTextW(hdc, L"Quick access", -1, &titleRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    SetTextCharacterExtra(hdc, 0);
 
-    // Quick Cards Grid (Windows 11 Fluent 4-Column Grid)
+    // Quick Cards Grid (Apple Squircle Glass Cards with Ambient Drop Shadows)
     int cardGap = 12;
     int cols = 4;
     int cardAreaW = effWidth - surfaceLeft - 36;
@@ -3809,12 +4207,16 @@ void MainWindow::paintHomeView(HDC hdc, int width, int height) {
         quickCards_[i].rect = RECT{cx, cy, cx + cardW, cy + cardH};
 
         bool isHov = (static_cast<int>(i) == hoverCard_);
-        COLORREF cardBg = isHov ? RGB(42, 42, 42) : RGB(33, 33, 33);
-        COLORREF cardBorder = isHov ? RGB(60, 60, 60) : RGB(46, 46, 46);
-        drawRoundedRect(hdc, quickCards_[i].rect, 8, cardBg, cardBorder);
+        bool isPressed = (pressedTarget_ == PressedTarget::QuickCard && pressedId_ == static_cast<int>(i));
+
+        drawAppleGlassCard(hdc, quickCards_[i].rect, 12,
+            isHov ? RGB(38, 46, 64) : RGB(30, 36, 48),
+            isHov ? RGB(26, 32, 44) : RGB(20, 24, 34),
+            isHov ? RGB(64, 78, 108) : RGB(42, 50, 70),
+            RGB(78, 92, 124), isPressed);
 
         RECT badgeRc{cx + 10, cy + 11, cx + 56, cy + 57};
-        drawRoundedRect(hdc, badgeRc, 6, RGB(38, 38, 38), RGB(48, 48, 48));
+        drawAppleGlassCard(hdc, badgeRc, 8, RGB(36, 44, 60), RGB(24, 28, 38), RGB(56, 68, 92), RGB(88, 105, 142), false);
 
         SelectObject(hdc, fontIcons_);
         SetTextColor(hdc, quickCards_[i].badgeColor);
@@ -3826,48 +4228,54 @@ void MainWindow::paintHomeView(HDC hdc, int width, int height) {
         DrawTextW(hdc, quickCards_[i].name.c_str(), -1, &nameRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
 
         SelectObject(hdc, fontSmall_);
-        SetTextColor(hdc, RGB(150, 150, 150));
+        SetTextColor(hdc, RGB(155, 168, 190));
         RECT subRc{cx + 64, cy + 37, cx + cardW - 24, cy + 57};
         DrawTextW(hdc, quickCards_[i].subtext.c_str(), -1, &subRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
 
         SelectObject(hdc, fontIconsSmall_);
-        SetTextColor(hdc, RGB(120, 120, 120));
+        SetTextColor(hdc, RGB(120, 130, 150));
         RECT pinRc{cx + cardW - 24, cy + 37, cx + cardW - 8, cy + 57};
         DrawTextW(hdc, L"\uE718", 1, &pinRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 
-    // Section 2: Section Tabs (Recent, Favorites, Shared)
+    // Section 2: Unified Segmented Control Track (apple-design §4, §12)
     int recentTop = cardStartY + numRows * (cardH + 12) + 16;
     RECT recentChevRc{surfaceLeft + 16, recentTop + 4, surfaceLeft + 32, recentTop + 30};
     SelectObject(hdc, fontIconsSmall_);
     SetTextColor(hdc, RGB(180, 180, 180));
     DrawTextW(hdc, L"\uE70D", 1, &recentChevRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-    int pillX = surfaceLeft + 36;
-    auto drawSectionPill = [&](RECT& outRc, const wchar_t* iconGlyph, const wchar_t* text, bool isSelected) {
-        int w = static_cast<int>(wcslen(text) * 9 + 42);
-        outRc = RECT{pillX, recentTop, pillX + w, recentTop + 32};
+    int trackW = 104 + 116 + 104 + 16;
+    RECT trackRc{surfaceLeft + 36, recentTop - 2, surfaceLeft + 36 + trackW, recentTop + 34};
+    drawApplePill(hdc, trackRc, RGB(22, 26, 36), RGB(42, 50, 70), RGB(56, 68, 92), false);
 
-        COLORREF fillCol = isSelected ? RGB(224, 187, 254) : RGB(28, 28, 28);
-        COLORREF borderCol = isSelected ? RGB(224, 187, 254) : RGB(48, 48, 48);
-        drawRoundedRect(hdc, outRc, 16, fillCol, borderCol);
+    int pillX = surfaceLeft + 40;
+    auto drawSectionPill = [&](RECT& outRc, const wchar_t* iconGlyph, const wchar_t* text, bool isSelected, bool isPressed) {
+        int w = static_cast<int>(wcslen(text) * 9 + 40);
+        outRc = RECT{pillX, recentTop + 1, pillX + w, recentTop + 31};
+
+        if (isSelected) {
+            drawApplePill(hdc, outRc, RGB(0, 113, 227), RGB(0, 113, 227), RGB(96, 175, 255), isPressed);
+        } else if (isPressed) {
+            drawApplePill(hdc, outRc, RGB(30, 36, 50), RGB(46, 56, 78), RGB(68, 80, 108), true);
+        }
 
         SelectObject(hdc, fontIconsSmall_);
-        SetTextColor(hdc, isSelected ? RGB(30, 20, 36) : RGB(160, 160, 160));
-        RECT iRc{outRc.left + 10, outRc.top, outRc.left + 26, outRc.bottom};
+        SetTextColor(hdc, isSelected ? RGB(255, 255, 255) : RGB(160, 175, 205));
+        RECT iRc{outRc.left + 8, outRc.top, outRc.left + 24, outRc.bottom};
         DrawTextW(hdc, iconGlyph, 1, &iRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
         SelectObject(hdc, fontRegular_);
-        SetTextColor(hdc, isSelected ? RGB(30, 20, 36) : RGB(180, 180, 180));
-        RECT tRc{outRc.left + 28, outRc.top, outRc.right - 10, outRc.bottom};
+        SetTextColor(hdc, isSelected ? RGB(255, 255, 255) : RGB(190, 200, 220));
+        RECT tRc{outRc.left + 26, outRc.top, outRc.right - 8, outRc.bottom};
         DrawTextW(hdc, text, -1, &tRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
-        pillX += w + 8;
+        pillX += w + 6;
     };
 
-    drawSectionPill(pillRecentRc_, L"\uE823", L"Recent", homeSection_ == 0);
-    drawSectionPill(pillFavRc_, L"\uE734", L"Favorites", homeSection_ == 1);
-    drawSectionPill(pillSharedRc_, L"\uE716", L"Shared", homeSection_ == 2);
+    drawSectionPill(pillRecentRc_, L"\uE823", L"Recent", homeSection_ == 0, pressedTarget_ == PressedTarget::HomeSectionRecent);
+    drawSectionPill(pillFavRc_, L"\uE734", L"Favorites", homeSection_ == 1, pressedTarget_ == PressedTarget::HomeSectionFav);
+    drawSectionPill(pillSharedRc_, L"\uE716", L"Shared", homeSection_ == 2, pressedTarget_ == PressedTarget::HomeSectionShared);
 
     int contentAreaTop = recentTop + 42;
     RECT contentAreaRc{surfaceLeft, contentAreaTop, effWidth, height - statusBarHeight_};
@@ -4077,7 +4485,7 @@ void MainWindow::paintTilesView(HDC hdc, int width, int height) {
         int col = r % cols;
         int row = r / cols;
         int tx = surfaceLeft + 14 + col * (tileW + 14);
-        int ty = startY + row * (tileH + 12) - scrollOffset_ * 20;
+        int ty = startY + row * (tileH + 12) - scrollOffset_ * 20 + static_cast<int>(overscrollY_);
 
         if (ty + tileH < startY || ty > height - statusBarHeight_) continue;
 
@@ -4085,9 +4493,11 @@ void MainWindow::paintTilesView(HDC hdc, int width, int height) {
         bool isSel = (r == selectedRow_);
         bool isHov = (r == hoverRow_);
 
-        COLORREF bgCol = isSel ? RGB(30, 51, 71) : (isHov ? RGB(38, 38, 38) : RGB(30, 30, 30));
-        COLORREF bdrCol = isSel ? RGB(96, 205, 255) : (isHov ? RGB(55, 55, 55) : RGB(42, 42, 42));
-        drawRoundedRect(hdc, tileRc, 8, bgCol, bdrCol);
+        drawAppleGlassCard(hdc, tileRc, 10,
+            isSel ? RGB(20, 52, 86) : (isHov ? RGB(36, 44, 60) : RGB(26, 30, 42)),
+            isSel ? RGB(14, 38, 64) : (isHov ? RGB(26, 32, 44) : RGB(20, 24, 34)),
+            isSel ? RGB(0, 113, 227) : (isHov ? RGB(56, 68, 92) : RGB(44, 52, 72)),
+            RGB(78, 92, 124), false);
 
         const auto& item = allItems_[filteredIndices_[i]];
 
@@ -4138,7 +4548,7 @@ void MainWindow::paintLargeIconsView(HDC hdc, int width, int height, bool isLarg
         int col = r % cols;
         int row = r / cols;
         int cx = surfaceLeft + 16 + col * (cardW + gapX);
-        int cy = startY + row * (cardH + gapY) - scrollOffset_ * 20;
+        int cy = startY + row * (cardH + gapY) - scrollOffset_ * 20 + static_cast<int>(overscrollY_);
 
         if (cy + cardH < startY || cy > height - statusBarHeight_) continue;
 
@@ -4146,11 +4556,11 @@ void MainWindow::paintLargeIconsView(HDC hdc, int width, int height, bool isLarg
         bool isSel = (r == selectedRow_);
         bool isHov = (r == hoverRow_);
 
-        // Apple Glassmorphism styling:
-        // Frosted dark background with luminous edge highlight
-        COLORREF bgCol = isSel ? RGB(26, 48, 76) : (isHov ? RGB(36, 40, 52) : RGB(28, 30, 36));
-        COLORREF bdrCol = isSel ? RGB(96, 205, 255) : (isHov ? RGB(72, 80, 104) : RGB(46, 50, 62));
-        drawRoundedRect(hdc, cardRc, 8, bgCol, bdrCol);
+        drawAppleGlassCard(hdc, cardRc, 12,
+            isSel ? RGB(20, 52, 86) : (isHov ? RGB(36, 44, 60) : RGB(26, 30, 42)),
+            isSel ? RGB(14, 38, 64) : (isHov ? RGB(26, 32, 44) : RGB(20, 24, 34)),
+            isSel ? RGB(0, 113, 227) : (isHov ? RGB(56, 68, 92) : RGB(44, 52, 72)),
+            RGB(78, 92, 124), false);
 
         const auto& item = allItems_[filteredIndices_[i]];
         std::filesystem::path fullPath = !item.fullPath.empty()
@@ -4295,7 +4705,8 @@ void MainWindow::paintDirectoryView(HDC hdc, int width, int height) {
     DeleteObject(hdrBrush);
 
     SelectObject(hdc, fontSmall_);
-    SetTextColor(hdc, RGB(140, 140, 140));
+    SetTextColor(hdc, RGB(140, 150, 170));
+    SetTextCharacterExtra(hdc, 1); // Apple Optical Tracking §15
 
     int colStart = surfaceLeft + 36 + (showCheckBoxes_ ? 28 : 0);
     int curNameW = isSearching_ ? 280 : colNameWidth_;
@@ -4317,6 +4728,7 @@ void MainWindow::paintDirectoryView(HDC hdc, int width, int height) {
     DrawTextW(hdc, dateHdr.c_str(), -1, &colDateRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     DrawTextW(hdc, typeHdr.c_str(), -1, &colTypeRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     DrawTextW(hdc, sizeHdr.c_str(), -1, &colSizeRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    SetTextCharacterExtra(hdc, 0);
 
     HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(40, 40, 40));
     SelectObject(hdc, borderPen);
@@ -4324,8 +4736,8 @@ void MainWindow::paintDirectoryView(HDC hdc, int width, int height) {
     LineTo(hdc, effWidth, tableHeaderTop + headerHeight_ - 1);
     DeleteObject(borderPen);
 
-    // 3. File Rows
-    int rowY = tableHeaderTop + headerHeight_;
+    // 3. File Rows with Apple Rubber-Banding (§9) and Fluid Selection (§1)
+    int rowY = tableHeaderTop + headerHeight_ + static_cast<int>(overscrollY_);
     int surfaceBottom = height - statusBarHeight_;
     int visibleRows = (surfaceBottom - rowY) / rowHeight_ + 2;
 
@@ -4341,13 +4753,9 @@ void MainWindow::paintDirectoryView(HDC hdc, int width, int height) {
         bool isHov = (r == hoverRow_);
 
         if (isSel) {
-            drawRoundedRect(hdc, rowRc, 6, RGB(30, 51, 71), RGB(40, 68, 95));
-            RECT pill{rowRc.left + 1, rowRc.top + 4, rowRc.left + 4, rowRc.bottom - 4};
-            HBRUSH acc = CreateSolidBrush(RGB(96, 205, 255));
-            FillRect(hdc, &pill, acc);
-            DeleteObject(acc);
+            drawApplePill(hdc, rowRc, RGB(0, 113, 227), RGB(0, 113, 227), RGB(96, 175, 255), false);
         } else if (isHov) {
-            drawRoundedRect(hdc, rowRc, 6, RGB(36, 36, 36), RGB(44, 44, 44));
+            drawApplePill(hdc, rowRc, RGB(30, 36, 50), RGB(46, 56, 78), RGB(68, 80, 108), false);
         }
 
         // Item check boxes ("Object boxes")
@@ -4543,23 +4951,25 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
     LineTo(hdc, paneX, height - statusBarHeight_);
     DeleteObject(borderPen);
 
-    // Draggable Splitter Affordance Handle (Center of Left Edge)
+    // Draggable Splitter Affordance Handle (Center of Left Edge - apple-design §2 Direct Manipulation)
     int midSplitterY = (contentTop + height - statusBarHeight_) / 2;
     RECT gripRc{paneX - 3, midSplitterY - 18, paneX + 3, midSplitterY + 18};
-    drawRoundedRect(hdc, gripRc, 3, RGB(34, 44, 62), RGB(96, 205, 255));
+    drawApplePill(hdc, gripRc, RGB(34, 44, 62), RGB(0, 113, 227), RGB(96, 205, 255), false);
 
     SetBkMode(hdc, TRANSPARENT);
 
     // 4. Header Bar
     RECT iconRc{paneX + 18, contentTop + 14, paneX + 38, contentTop + 38};
     SelectObject(hdc, fontIconsSmall_);
-    SetTextColor(hdc, RGB(96, 205, 255));
+    SetTextColor(hdc, RGB(0, 113, 227));
     DrawTextW(hdc, L"\uE8A1", 1, &iconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
     RECT titleRc{paneX + 42, contentTop + 14, paneX + 145, contentTop + 38};
     SelectObject(hdc, fontTitle_);
     SetTextColor(hdc, RGB(255, 255, 255));
+    SetTextCharacterExtra(hdc, -1); // Apple Optical Tracking §15
     DrawTextW(hdc, L"Quick Look", 10, &titleRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    SetTextCharacterExtra(hdc, 0);
 
     // Header Width Sizing Controls (◀ Widen, ⟲ Reset 420px, ▶ Narrow, × Close)
     btnPaneCloseRc_ = RECT{width - 34, contentTop + 14, width - 12, contentTop + 36};
@@ -4567,17 +4977,18 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
     btnPaneResetRc_ = RECT{width - 86, contentTop + 14, width - 64, contentTop + 36};
     btnPaneWidenRc_ = RECT{width - 112, contentTop + 14, width - 90, contentTop + 36};
 
-    auto drawHeaderBtn = [&](const RECT& rc, const wchar_t* glyph, COLORREF textCol) {
-        drawRoundedRect(hdc, rc, 11, RGB(28, 32, 44), RGB(50, 58, 76));
+    auto drawHeaderBtn = [&](const RECT& rc, const wchar_t* glyph, COLORREF textCol, PressedTarget pt) {
+        bool isPressed = (pressedTarget_ == pt);
+        drawApplePill(hdc, rc, RGB(28, 34, 48), RGB(50, 60, 84), RGB(78, 92, 124), isPressed);
         SelectObject(hdc, fontRegular_);
         SetTextColor(hdc, textCol);
         DrawTextW(hdc, glyph, 1, const_cast<RECT*>(&rc), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     };
 
-    drawHeaderBtn(btnPaneWidenRc_, L"◀", RGB(160, 200, 255));
-    drawHeaderBtn(btnPaneResetRc_, L"⟲", RGB(180, 190, 210));
-    drawHeaderBtn(btnPaneNarrowRc_, L"▶", RGB(160, 200, 255));
-    drawHeaderBtn(btnPaneCloseRc_, L"×", RGB(220, 140, 150));
+    drawHeaderBtn(btnPaneWidenRc_, L"◀", RGB(160, 200, 255), PressedTarget::PaneWiden);
+    drawHeaderBtn(btnPaneResetRc_, L"⟲", RGB(180, 190, 210), PressedTarget::PaneReset);
+    drawHeaderBtn(btnPaneNarrowRc_, L"▶", RGB(160, 200, 255), PressedTarget::PaneNarrow);
+    drawHeaderBtn(btnPaneCloseRc_, L"×", RGB(220, 140, 150), PressedTarget::PaneClose);
 
     // Determine target item: active hover item or selected item
     int targetIdx = (hoverRow_ >= 0 && hoverRow_ < static_cast<int>(filteredIndices_.size()))
@@ -5060,18 +5471,18 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
         }
     }
 
-    // Liquid Glass Action Dock (Bottom)
+    // Liquid Glass Action Dock (Bottom - apple-design §12 Translucent Action Dock)
     int btnY = height - statusBarHeight_ - 52;
     int availW = (width - 16) - (paneX + 16);
     int numBtns = (isPdf && previewPaneWidth_ >= 460) ? 4 : 3;
     int spacing = 8;
     int singleW = (availW - spacing * (numBtns - 1)) / numBtns;
 
-    // 1. Open Button
+    // 1. Open Button (Primary Apple Blue Capsule)
     RECT b1Rc{paneX + 16, btnY, paneX + 16 + singleW, btnY + 36};
-    drawRoundedRect(hdc, b1Rc, 8, RGB(20, 50, 76), RGB(96, 205, 255));
+    drawApplePill(hdc, b1Rc, RGB(0, 113, 227), RGB(0, 113, 227), RGB(96, 175, 255), pressedTarget_ == PressedTarget::ActionDockOpen);
     SelectObject(hdc, fontIconsSmall_);
-    SetTextColor(hdc, RGB(96, 205, 255));
+    SetTextColor(hdc, RGB(255, 255, 255));
     RECT b1Icon{b1Rc.left + 8, btnY, b1Rc.left + 26, btnY + 36};
     DrawTextW(hdc, L"\uE8A7", 1, &b1Icon, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     SelectObject(hdc, fontRegular_);
@@ -5079,9 +5490,9 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
     RECT b1Text{b1Rc.left + 28, btnY, b1Rc.right - 6, btnY + 36};
     DrawTextW(hdc, isPdf ? L"Open PDF" : L"Open File", -1, &b1Text, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
-    // 2. In Folder Button
+    // 2. In Folder Button (Secondary Frosted Capsule)
     RECT b2Rc{b1Rc.right + spacing, btnY, b1Rc.right + spacing + singleW, btnY + 36};
-    drawRoundedRect(hdc, b2Rc, 8, RGB(26, 32, 44), RGB(56, 68, 92));
+    drawApplePill(hdc, b2Rc, RGB(28, 34, 48), RGB(52, 62, 86), RGB(78, 92, 124), pressedTarget_ == PressedTarget::ActionDockInFolder);
     SelectObject(hdc, fontIconsSmall_);
     SetTextColor(hdc, RGB(255, 195, 70));
     RECT b2Icon{b2Rc.left + 8, btnY, b2Rc.left + 26, btnY + 36};
@@ -5094,7 +5505,7 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
     if (numBtns == 4) {
         // 3. Copy Path Button
         RECT b3Rc{b2Rc.right + spacing, btnY, b2Rc.right + spacing + singleW, btnY + 36};
-        drawRoundedRect(hdc, b3Rc, 8, RGB(26, 32, 44), RGB(56, 68, 92));
+        drawApplePill(hdc, b3Rc, RGB(28, 34, 48), RGB(52, 62, 86), RGB(78, 92, 124), pressedTarget_ == PressedTarget::ActionDockCopyPath);
         SelectObject(hdc, fontIconsSmall_);
         SetTextColor(hdc, RGB(160, 175, 205));
         RECT b3Icon{b3Rc.left + 8, btnY, b3Rc.left + 26, btnY + 36};
@@ -5106,7 +5517,7 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
 
         // 4. Copy Text Button
         RECT b4Rc{b3Rc.right + spacing, btnY, width - 16, btnY + 36};
-        drawRoundedRect(hdc, b4Rc, 8, RGB(34, 26, 44), RGB(160, 96, 255));
+        drawApplePill(hdc, b4Rc, RGB(38, 28, 52), RGB(160, 96, 255), RGB(200, 140, 255), pressedTarget_ == PressedTarget::ActionDockCopyText);
         SelectObject(hdc, fontIconsSmall_);
         SetTextColor(hdc, RGB(210, 150, 255));
         RECT b4Icon{b4Rc.left + 8, btnY, b4Rc.left + 26, btnY + 36};
@@ -5118,9 +5529,10 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
     } else {
         // 3. Copy Text (or Copy Path if not PDF)
         RECT b3Rc{b2Rc.right + spacing, btnY, width - 16, btnY + 36};
-        COLORREF bgC = isPdf ? RGB(34, 26, 44) : RGB(26, 32, 44);
-        COLORREF bdrC = isPdf ? RGB(160, 96, 255) : RGB(56, 68, 92);
-        drawRoundedRect(hdc, b3Rc, 8, bgC, bdrC);
+        COLORREF bgC = isPdf ? RGB(38, 28, 52) : RGB(28, 34, 48);
+        COLORREF bdrC = isPdf ? RGB(160, 96, 255) : RGB(52, 62, 86);
+        COLORREF hiC = isPdf ? RGB(200, 140, 255) : RGB(78, 92, 124);
+        drawApplePill(hdc, b3Rc, bgC, bdrC, hiC, pressedTarget_ == (isPdf ? PressedTarget::ActionDockCopyText : PressedTarget::ActionDockCopyPath));
         SelectObject(hdc, fontIconsSmall_);
         SetTextColor(hdc, isPdf ? RGB(210, 150, 255) : RGB(160, 175, 205));
         RECT b3Icon{b3Rc.left + 8, btnY, b3Rc.left + 26, btnY + 36};

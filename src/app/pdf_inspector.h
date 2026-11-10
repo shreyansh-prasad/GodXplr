@@ -616,3 +616,4 @@ public:
 };
 
 } // namespace gx::app
+

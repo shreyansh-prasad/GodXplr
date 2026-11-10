@@ -76,6 +76,35 @@ enum class SizeFilter {
     Huge     // > 1 GB
 };
 
+enum class PressedTarget {
+    None,
+    TrafficClose,
+    TrafficMin,
+    TrafficZoom,
+    Tab,
+    NewTab,
+    NavBack,
+    NavForward,
+    NavUp,
+    NavRefresh,
+    CmdBtn,
+    FilterPill,
+    QuickCard,
+    HomeSectionRecent,
+    HomeSectionFav,
+    HomeSectionShared,
+    ActionDockOpen,
+    ActionDockInFolder,
+    ActionDockCopyPath,
+    ActionDockCopyText,
+    PaneClose,
+    PaneNarrow,
+    PaneReset,
+    PaneWiden,
+    ThisPcTool,
+    DriveCard
+};
+
 struct FileItemDisplay {
     std::wstring name;
     std::wstring extension;
@@ -243,6 +272,11 @@ private:
     void copyTextToClipboard(const std::wstring& text);
     const PdfDocumentInfo& getOrLoadPdfInfo(const std::wstring& fullPath);
 
+    // Apple Design Foundation Helpers
+    void drawAppleGlassCard(HDC hdc, const RECT& rc, int radius, COLORREF topGrad, COLORREF botGrad, COLORREF borderColor, COLORREF topHighlight, bool isPressed = false);
+    void drawApplePill(HDC hdc, const RECT& rc, COLORREF fillCol, COLORREF borderCol, COLORREF topHighlight, bool isPressed = false);
+    void drawAppleTrafficLights(HDC hdc, bool isHovered, PressedTarget pressed);
+
     std::unordered_map<std::wstring, CachedThumbnail> thumbCache_;
     std::unordered_map<std::wstring, PdfDocumentInfo> pdfCache_;
 
@@ -318,6 +352,20 @@ private:
     int hoverCard_{-1};
     int hoverCmdBtn_{-1};
     int scrollOffset_{0};
+
+    // Apple Design: Instant Pointer-Down Press Feedback State
+    PressedTarget pressedTarget_{PressedTarget::None};
+    int pressedId_{-1};
+    POINT pressStartPt_{0, 0};
+
+    // Apple macOS Finder Traffic Light Rects & Hover
+    bool trafficHover_{false};
+    RECT trafficCloseRc_{16, 14, 28, 26};
+    RECT trafficMinRc_{36, 14, 48, 26};
+    RECT trafficZoomRc_{56, 14, 68, 26};
+
+    // Apple Fluid Rubber-Banding Physics
+    double overscrollY_{0.0};
 
     // Layout Dimensions (Modern, Spacious Visual Hierarchy)
     int tabBarHeight_{42};
