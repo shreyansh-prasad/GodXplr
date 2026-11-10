@@ -19,6 +19,7 @@
 #include <unordered_map>
 
 #include "godxplr/ui/theme/design_tokens.h"
+#include "pdf_inspector.h"
 
 namespace gx::app {
 
@@ -152,6 +153,7 @@ private:
     void onVScroll(WPARAM wParam);
     void onMouseWheel(short delta);
     void onLButtonDown(int x, int y, bool isDoubleClick);
+    void onLButtonUp(int x, int y);
     void onRButtonUp(int x, int y);
     void onMouseMove(int x, int y);
     void onKeyDown(WPARAM key);
@@ -239,8 +241,10 @@ private:
     HBITMAP getThumbnailBitmap(const std::wstring& fullPath, int targetSize);
     void drawThumbnail(HDC hdc, HBITMAP hBmp, const RECT& targetRc);
     void copyTextToClipboard(const std::wstring& text);
+    const PdfDocumentInfo& getOrLoadPdfInfo(const std::wstring& fullPath);
 
     std::unordered_map<std::wstring, CachedThumbnail> thumbCache_;
+    std::unordered_map<std::wstring, PdfDocumentInfo> pdfCache_;
 
     HINSTANCE hInstance_{nullptr};
     HWND hwnd_{nullptr};
@@ -326,6 +330,17 @@ private:
     int sidebarWidth_{270};
     int detailsPaneWidth_{320};
     int previewPaneWidth_{420};
+
+    // Resizing State & Header Control Rects
+    bool isResizingPreviewPane_{false};
+    bool isResizingSidebar_{false};
+    int resizeStartX_{0};
+    int resizeStartWidth_{0};
+
+    RECT btnPaneNarrowRc_{};
+    RECT btnPaneResetRc_{};
+    RECT btnPaneWidenRc_{};
+    RECT btnPaneCloseRc_{};
 
     // Column Widths
     int colNameWidth_{380};

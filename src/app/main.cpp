@@ -7,6 +7,7 @@
 #include <commctrl.h>
 #include <objbase.h>
 #include <string>
+#include <fstream>
 
 int WINAPI wWinMain(
     HINSTANCE hInstance,

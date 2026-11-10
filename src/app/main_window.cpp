@@ -102,7 +102,7 @@ COLORREF toColorRef(const ui::ColorRgba& c) {
 
 std::wstring getKnownPath(REFKNOWNFOLDERID rfid) {
     PWSTR pPath = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(rfid, 0, nullptr, &pPath))) {
+    if (SUCCEEDED(SHGetKnownFolderPath(rfid, KF_FLAG_DONT_VERIFY, nullptr, &pPath))) {
         std::wstring res = pPath;
         CoTaskMemFree(pPath);
         return res;
@@ -405,6 +405,11 @@ MainWindow* MainWindow::create(HINSTANCE hInstance, const std::wstring& initialP
         return nullptr;
     }
 
+    {
+        std::ofstream ofs("C:\\os fileX\\build\\godxplr_hwnd.txt");
+        if (ofs) ofs << reinterpret_cast<uintptr_t>(hwnd) << std::endl;
+    }
+
     // Native Windows 11 Immersive Dark Mode & Rounded Corners
     BOOL darkMode = TRUE;
     DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &darkMode, sizeof(darkMode));
@@ -625,12 +630,11 @@ void MainWindow::initKnownFolders() {
     pathHome_ = getKnownPath(FOLDERID_Profile);
 
     // OneDrive personal directory
-    pathOneDrive_ = pathHome_ + L"\\OneDrive";
-    if (!std::filesystem::exists(pathOneDrive_)) {
-        WCHAR envBuf[MAX_PATH]{};
-        if (GetEnvironmentVariableW(L"OneDrive", envBuf, MAX_PATH)) {
-            pathOneDrive_ = envBuf;
-        }
+    WCHAR envBuf[MAX_PATH]{};
+    if (GetEnvironmentVariableW(L"OneDrive", envBuf, MAX_PATH)) {
+        pathOneDrive_ = envBuf;
+    } else {
+        pathOneDrive_ = pathHome_ + L"\\OneDrive";
     }
 }
 
@@ -1185,6 +1189,16 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
         navigateToThisPc();
         return 0;
 
+    case WM_USER + 113: { // Set preview pane width (wParam: target width, e.g. 520, 600, or 0 = reset 420)
+        previewPaneWidth_ = (wParam == 0) ? 420 : static_cast<int>(wParam);
+        RECT rc;
+        GetClientRect(hwnd_, &rc);
+        onResize(rc.right, rc.bottom);
+        InvalidateRect(hwnd_, nullptr, FALSE);
+        UpdateWindow(hwnd_);
+        return 0;
+    }
+
     case WM_USER + 111: // Set search query (wParam: 0 = clear, 1 = Batman: Arkham Knight, 2 = Arkham, 3 = BATMANARK, 4 = Dark Knight, 5 = knight, 6 = Batman Arkham Trilogy)
         if (wParam == 0) {
             searchIsPlaceholder_ = true;
@@ -1268,6 +1282,10 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
         onLButtonDown(LOWORD(lParam), HIWORD(lParam), true);
         return 0;
 
+    case WM_LBUTTONUP:
+        onLButtonUp(LOWORD(lParam), HIWORD(lParam));
+        return 0;
+
     case WM_RBUTTONUP:
         onRButtonUp(LOWORD(lParam), HIWORD(lParam));
         return 0;
@@ -1275,6 +1293,30 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
     case WM_MOUSEMOVE:
         onMouseMove(LOWORD(lParam), HIWORD(lParam));
         return 0;
+
+    case WM_SETCURSOR:
+        if (LOWORD(lParam) == HTCLIENT) {
+            POINT pt;
+            GetCursorPos(&pt);
+            ScreenToClient(hwnd_, &pt);
+            RECT clientRc;
+            GetClientRect(hwnd_, &clientRc);
+            int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
+            if (showPreviewPane_) {
+                int paneX = static_cast<int>(clientRc.right) - previewPaneWidth_;
+                if (std::abs(pt.x - paneX) <= 6 && pt.y >= contentTop && pt.y < clientRc.bottom - statusBarHeight_) {
+                    SetCursor(LoadCursorW(nullptr, MAKEINTRESOURCEW(32644)));
+                    return TRUE;
+                }
+            }
+            if (showNavigationPane_) {
+                if (std::abs(pt.x - sidebarWidth_) <= 6 && pt.y >= contentTop && pt.y < clientRc.bottom - statusBarHeight_) {
+                    SetCursor(LoadCursorW(nullptr, MAKEINTRESOURCEW(32644)));
+                    return TRUE;
+                }
+            }
+        }
+        break;
 
     case WM_KEYDOWN:
         onKeyDown(wParam);
@@ -1348,7 +1390,41 @@ void MainWindow::onMouseWheel(short delta) {
     InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
+void MainWindow::onLButtonUp(int x, int y) {
+    (void)x; (void)y;
+    if (isResizingPreviewPane_ || isResizingSidebar_) {
+        isResizingPreviewPane_ = false;
+        isResizingSidebar_ = false;
+        ReleaseCapture();
+        RECT clientRc;
+        GetClientRect(hwnd_, &clientRc);
+        onResize(clientRc.right, clientRc.bottom);
+        InvalidateRect(hwnd_, nullptr, FALSE);
+    }
+}
+
 void MainWindow::onMouseMove(int x, int y) {
+    if (isResizingPreviewPane_) {
+        RECT clientRc;
+        GetClientRect(hwnd_, &clientRc);
+        int newW = static_cast<int>(clientRc.right) - x;
+        int maxW = std::max<int>(320, static_cast<int>(clientRc.right) - sidebarWidth_ - 80);
+        previewPaneWidth_ = std::clamp(newW, 280, maxW);
+        onResize(clientRc.right, clientRc.bottom);
+        InvalidateRect(hwnd_, nullptr, FALSE);
+        return;
+    }
+
+    if (isResizingSidebar_) {
+        RECT clientRc;
+        GetClientRect(hwnd_, &clientRc);
+        int maxW = std::max<int>(200, static_cast<int>(clientRc.right) - (showPreviewPane_ ? previewPaneWidth_ : 0) - 80);
+        sidebarWidth_ = std::clamp(x, 180, std::min<int>(550, maxW));
+        onResize(clientRc.right, clientRc.bottom);
+        InvalidateRect(hwnd_, nullptr, FALSE);
+        return;
+    }
+
     int oldSidebar = sidebarHoverIndex_;
     int oldHoverRow = hoverRow_;
     int oldCard = hoverCard_;
@@ -1628,18 +1704,67 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
         return;
     }
 
+    // Check splitter dragging on preview pane left edge
+    if (showPreviewPane_) {
+        int paneX = clientRc.right - previewPaneWidth_;
+        if (std::abs(x - paneX) <= 6 && y >= contentTop && y < clientRc.bottom - statusBarHeight_) {
+            isResizingPreviewPane_ = true;
+            resizeStartX_ = x;
+            resizeStartWidth_ = previewPaneWidth_;
+            SetCapture(hwnd_);
+            return;
+        }
+    }
+
+    // Check splitter dragging on sidebar right edge
+    if (showNavigationPane_) {
+        if (std::abs(x - sidebarWidth_) <= 6 && y >= contentTop && y < clientRc.bottom - statusBarHeight_) {
+            isResizingSidebar_ = true;
+            resizeStartX_ = x;
+            resizeStartWidth_ = sidebarWidth_;
+            SetCapture(hwnd_);
+            return;
+        }
+    }
+
     // 5. Details Pane / Preview Pane Clicks (Close button & Action Buttons)
     if (showDetailsPane_ || showPreviewPane_) {
         int paneW = showDetailsPane_ ? detailsPaneWidth_ : previewPaneWidth_;
         int paneX = clientRc.right - paneW;
         if (x >= paneX && y >= contentTop) {
-            // Close 'X' button
-            if (x >= clientRc.right - 36 && x < clientRc.right - 10 && y >= contentTop + 10 && y < contentTop + 40) {
-                showDetailsPane_ = false;
-                showPreviewPane_ = false;
-                onResize(clientRc.right, clientRc.bottom);
-                InvalidateRect(hwnd_, nullptr, FALSE);
-                return;
+            // Header buttons (Widen, Reset, Narrow, Close)
+            if (showPreviewPane_ && y >= contentTop + 10 && y < contentTop + 40) {
+                if (PtInRect(&btnPaneCloseRc_, POINT{x, y})) {
+                    showPreviewPane_ = false;
+                    onResize(clientRc.right, clientRc.bottom);
+                    InvalidateRect(hwnd_, nullptr, FALSE);
+                    return;
+                }
+                if (PtInRect(&btnPaneNarrowRc_, POINT{x, y})) {
+                    previewPaneWidth_ = std::max(280, previewPaneWidth_ - 70);
+                    onResize(clientRc.right, clientRc.bottom);
+                    InvalidateRect(hwnd_, nullptr, FALSE);
+                    return;
+                }
+                if (PtInRect(&btnPaneResetRc_, POINT{x, y})) {
+                    previewPaneWidth_ = 420;
+                    onResize(clientRc.right, clientRc.bottom);
+                    InvalidateRect(hwnd_, nullptr, FALSE);
+                    return;
+                }
+                if (PtInRect(&btnPaneWidenRc_, POINT{x, y})) {
+                    previewPaneWidth_ = std::min<int>(static_cast<int>(clientRc.right) - sidebarWidth_ - 80, previewPaneWidth_ + 70);
+                    onResize(clientRc.right, clientRc.bottom);
+                    InvalidateRect(hwnd_, nullptr, FALSE);
+                    return;
+                }
+            } else if (showDetailsPane_) {
+                if (x >= clientRc.right - 36 && x < clientRc.right - 10 && y >= contentTop + 10 && y < contentTop + 40) {
+                    showDetailsPane_ = false;
+                    onResize(clientRc.right, clientRc.bottom);
+                    InvalidateRect(hwnd_, nullptr, FALSE);
+                    return;
+                }
             }
 
             // Preview Pane Quick Actions at bottom
@@ -1649,26 +1774,61 @@ void MainWindow::onLButtonDown(int x, int y, bool isDoubleClick) {
                     int targetIdx = (hoverRow_ >= 0 && hoverRow_ < static_cast<int>(filteredIndices_.size())) ? hoverRow_ : selectedRow_;
                     if (targetIdx >= 0 && targetIdx < static_cast<int>(filteredIndices_.size())) {
                         const auto& item = allItems_[filteredIndices_[targetIdx]];
-                        // 1. Open File button
-                        if (x >= paneX + 16 && x < paneX + 138) {
+                        std::filesystem::path fullP = !item.fullPath.empty()
+                            ? std::filesystem::path(item.fullPath)
+                            : (isHomeView_ ? std::filesystem::path(item.location) / item.name : currentPath_ / item.name);
+                        bool isPdf = (!item.isDirectory && toLower(item.extension) == L"pdf");
+
+                        int availW = (clientRc.right - 16) - (paneX + 16);
+                        int numBtns = (isPdf && previewPaneWidth_ >= 460) ? 4 : 3;
+                        int spacing = 8;
+                        int singleW = (availW - spacing * (numBtns - 1)) / numBtns;
+
+                        RECT b1{paneX + 16, btnY, paneX + 16 + singleW, btnY + 36};
+                        if (PtInRect(&b1, POINT{x, y})) {
                             openItem(item);
                             return;
                         }
-                        // 2. Show in Folder button
-                        if (x >= paneX + 144 && x < paneX + 276) {
-                            std::filesystem::path fullP = !item.fullPath.empty()
-                                ? std::filesystem::path(item.fullPath)
-                                : (isHomeView_ ? std::filesystem::path(item.location) / item.name : currentPath_ / item.name);
+
+                        RECT b2{b1.right + spacing, btnY, b1.right + spacing + singleW, btnY + 36};
+                        if (PtInRect(&b2, POINT{x, y})) {
                             showInFolder(fullP.wstring());
                             return;
                         }
-                        // 3. Copy Path button
-                        if (x >= paneX + 282 && x < clientRc.right - 16) {
-                            std::filesystem::path fullP = !item.fullPath.empty()
-                                ? std::filesystem::path(item.fullPath)
-                                : (isHomeView_ ? std::filesystem::path(item.location) / item.name : currentPath_ / item.name);
-                            copyTextToClipboard(fullP.wstring());
-                            return;
+
+                        if (numBtns == 4) {
+                            RECT b3{b2.right + spacing, btnY, b2.right + spacing + singleW, btnY + 36};
+                            if (PtInRect(&b3, POINT{x, y})) {
+                                copyTextToClipboard(fullP.wstring());
+                                return;
+                            }
+                            RECT b4{b3.right + spacing, btnY, clientRc.right - 16, btnY + 36};
+                            if (PtInRect(&b4, POINT{x, y})) {
+                                const auto& pdf = getOrLoadPdfInfo(fullP.wstring());
+                                std::wstring allText;
+                                for (const auto& line : pdf.lines) {
+                                    allText += line + L"\r\n";
+                                }
+                                if (!allText.empty()) copyTextToClipboard(allText);
+                                return;
+                            }
+                        } else {
+                            RECT b3{b2.right + spacing, btnY, clientRc.right - 16, btnY + 36};
+                            if (PtInRect(&b3, POINT{x, y})) {
+                                if (isPdf) {
+                                    const auto& pdf = getOrLoadPdfInfo(fullP.wstring());
+                                    std::wstring allText;
+                                    for (const auto& line : pdf.lines) {
+                                        allText += line + L"\r\n";
+                                    }
+                                    if (!allText.empty()) {
+                                        copyTextToClipboard(allText);
+                                        return;
+                                    }
+                                }
+                                copyTextToClipboard(fullP.wstring());
+                                return;
+                            }
                         }
                     }
                 }
@@ -1957,6 +2117,28 @@ void MainWindow::onKeyDown(WPARAM key) {
             viewMode_ = ViewMode::Tiles; InvalidateRect(hwnd_, nullptr, FALSE); return;
         } else if (key == '3') {
             viewMode_ = ViewMode::LargeIcons; InvalidateRect(hwnd_, nullptr, FALSE); return;
+        } else if (key == VK_OEM_4) { // Ctrl+[ : Narrow preview panel
+            RECT rc;
+            GetClientRect(hwnd_, &rc);
+            previewPaneWidth_ = std::max(280, previewPaneWidth_ - 50);
+            onResize(rc.right, rc.bottom);
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        } else if (key == VK_OEM_6) { // Ctrl+] : Widen preview panel
+            RECT rc;
+            GetClientRect(hwnd_, &rc);
+            int maxW = std::max<int>(320, static_cast<int>(rc.right) - sidebarWidth_ - 80);
+            previewPaneWidth_ = std::min<int>(maxW, previewPaneWidth_ + 50);
+            onResize(rc.right, rc.bottom);
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        } else if (key == '0') { // Ctrl+0 : Reset preview panel width
+            RECT rc;
+            GetClientRect(hwnd_, &rc);
+            previewPaneWidth_ = 420;
+            onResize(rc.right, rc.bottom);
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
         }
     }
 
@@ -4361,6 +4543,11 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
     LineTo(hdc, paneX, height - statusBarHeight_);
     DeleteObject(borderPen);
 
+    // Draggable Splitter Affordance Handle (Center of Left Edge)
+    int midSplitterY = (contentTop + height - statusBarHeight_) / 2;
+    RECT gripRc{paneX - 3, midSplitterY - 18, paneX + 3, midSplitterY + 18};
+    drawRoundedRect(hdc, gripRc, 3, RGB(34, 44, 62), RGB(96, 205, 255));
+
     SetBkMode(hdc, TRANSPARENT);
 
     // 4. Header Bar
@@ -4369,17 +4556,28 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
     SetTextColor(hdc, RGB(96, 205, 255));
     DrawTextW(hdc, L"\uE8A1", 1, &iconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-    RECT titleRc{paneX + 42, contentTop + 14, paneX + 160, contentTop + 38};
+    RECT titleRc{paneX + 42, contentTop + 14, paneX + 145, contentTop + 38};
     SelectObject(hdc, fontTitle_);
     SetTextColor(hdc, RGB(255, 255, 255));
     DrawTextW(hdc, L"Quick Look", 10, &titleRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
-    // Close 'X' Button with subtle circular glass capsule
-    RECT closeRc{width - 34, contentTop + 14, width - 12, contentTop + 36};
-    drawRoundedRect(hdc, closeRc, 11, RGB(28, 32, 44), RGB(50, 58, 76));
-    SelectObject(hdc, fontRegular_);
-    SetTextColor(hdc, RGB(180, 185, 200));
-    DrawTextW(hdc, L"×", 1, &closeRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    // Header Width Sizing Controls (◀ Widen, ⟲ Reset 420px, ▶ Narrow, × Close)
+    btnPaneCloseRc_ = RECT{width - 34, contentTop + 14, width - 12, contentTop + 36};
+    btnPaneNarrowRc_ = RECT{width - 60, contentTop + 14, width - 38, contentTop + 36};
+    btnPaneResetRc_ = RECT{width - 86, contentTop + 14, width - 64, contentTop + 36};
+    btnPaneWidenRc_ = RECT{width - 112, contentTop + 14, width - 90, contentTop + 36};
+
+    auto drawHeaderBtn = [&](const RECT& rc, const wchar_t* glyph, COLORREF textCol) {
+        drawRoundedRect(hdc, rc, 11, RGB(28, 32, 44), RGB(50, 58, 76));
+        SelectObject(hdc, fontRegular_);
+        SetTextColor(hdc, textCol);
+        DrawTextW(hdc, glyph, 1, const_cast<RECT*>(&rc), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    };
+
+    drawHeaderBtn(btnPaneWidenRc_, L"◀", RGB(160, 200, 255));
+    drawHeaderBtn(btnPaneResetRc_, L"⟲", RGB(180, 190, 210));
+    drawHeaderBtn(btnPaneNarrowRc_, L"▶", RGB(160, 200, 255));
+    drawHeaderBtn(btnPaneCloseRc_, L"×", RGB(220, 140, 150));
 
     // Determine target item: active hover item or selected item
     int targetIdx = (hoverRow_ >= 0 && hoverRow_ < static_cast<int>(filteredIndices_.size()))
@@ -4404,7 +4602,7 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
         RECT subRc{cardRc.left + 16, cardRc.top + 128, cardRc.right - 16, cardRc.top + 175};
         SelectObject(hdc, fontSmall_);
         SetTextColor(hdc, RGB(145, 155, 175));
-        DrawTextW(hdc, L"Select or hover over any photo, document, or folder to inspect contents in full Liquid Glass fidelity.", -1, &subRc, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
+        DrawTextW(hdc, L"Select or hover over any document, photo, or folder to inspect contents in full Liquid Glass fidelity.", -1, &subRc, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
         return;
     }
 
@@ -4414,18 +4612,20 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
         : (isHomeView_ ? std::filesystem::path(item.location) / item.name : currentPath_ / item.name);
 
     std::wstring ext = toLower(item.extension);
+    bool isPdf = (!item.isDirectory && ext == L"pdf");
     bool isImage = (!item.isDirectory && (ext == L"png" || ext == L"jpg" || ext == L"jpeg" || ext == L"bmp" || ext == L"webp" || ext == L"gif" || ext == L"ico" || ext == L"jfif" || ext == L"tiff"));
     bool isVideo = (!item.isDirectory && (ext == L"mp4" || ext == L"mkv" || ext == L"avi" || ext == L"mov" || ext == L"wmv" || ext == L"webm"));
     bool isAudio = (!item.isDirectory && (ext == L"mp3" || ext == L"wav" || ext == L"flac" || ext == L"aac" || ext == L"m4a"));
     bool isCode = (!item.isDirectory && (ext == L"txt" || ext == L"cpp" || ext == L"h" || ext == L"c" || ext == L"hpp" || ext == L"json" || ext == L"md" || ext == L"py" || ext == L"cmake" || ext == L"xml" || ext == L"log" || ext == L"csv" || ext == L"ini" || ext == L"bat" || ext == L"ps1" || ext == L"sh" || ext == L"yaml" || ext == L"yml" || ext == L"rs" || ext == L"js" || ext == L"ts" || ext == L"html" || ext == L"css"));
 
     // Glowing Category Pill in header
-    COLORREF catPillBg = item.isDirectory ? RGB(48, 38, 18) : (isImage ? RGB(20, 38, 54) : (isVideo ? RGB(42, 26, 56) : (isCode ? RGB(18, 44, 32) : RGB(32, 36, 48))));
-    COLORREF catPillBdr = item.isDirectory ? RGB(120, 90, 36) : (isImage ? RGB(46, 92, 130) : (isVideo ? RGB(100, 60, 140) : (isCode ? RGB(40, 100, 70) : RGB(56, 64, 84))));
-    COLORREF catPillText = item.isDirectory ? RGB(255, 195, 70) : (isImage ? RGB(96, 205, 255) : (isVideo ? RGB(210, 140, 255) : (isCode ? RGB(90, 220, 150) : RGB(190, 200, 220))));
-    std::wstring catLabel = item.isDirectory ? L"Folder" : (isImage ? L"Photo" : (isVideo ? L"Video" : (isAudio ? L"Audio" : (isCode ? L"Document" : L"File"))));
+    COLORREF catPillBg = item.isDirectory ? RGB(48, 38, 18) : (isPdf ? RGB(52, 20, 28) : (isImage ? RGB(20, 38, 54) : (isVideo ? RGB(42, 26, 56) : (isCode ? RGB(18, 44, 32) : RGB(32, 36, 48)))));
+    COLORREF catPillBdr = item.isDirectory ? RGB(120, 90, 36) : (isPdf ? RGB(170, 52, 68) : (isImage ? RGB(46, 92, 130) : (isVideo ? RGB(100, 60, 140) : (isCode ? RGB(40, 100, 70) : RGB(56, 64, 84)))));
+    COLORREF catPillText = item.isDirectory ? RGB(255, 195, 70) : (isPdf ? RGB(255, 125, 145) : (isImage ? RGB(96, 205, 255) : (isVideo ? RGB(210, 140, 255) : (isCode ? RGB(90, 220, 150) : RGB(190, 200, 220)))));
+    std::wstring catLabel = item.isDirectory ? L"Folder" : (isPdf ? L"PDF Document" : (isImage ? L"Photo" : (isVideo ? L"Video" : (isAudio ? L"Audio" : (isCode ? L"Document" : L"File")))));
 
-    RECT catPill{paneX + 165, contentTop + 14, paneX + 255, contentTop + 36};
+    int pillW = static_cast<int>(catLabel.length() * 8 + 24);
+    RECT catPill{paneX + 150, contentTop + 14, std::min<int>(static_cast<int>(btnPaneWidenRc_.left) - 8, paneX + 150 + pillW), contentTop + 36};
     drawRoundedRect(hdc, catPill, 11, catPillBg, catPillBdr);
     SelectObject(hdc, fontSmall_);
     SetTextColor(hdc, catPillText);
@@ -4504,6 +4704,131 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
         DrawTextW(hdc, szStr.c_str(), -1, &szPill, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
         curY += 38;
+    } else if (isPdf) {
+        const auto& pdf = getOrLoadPdfInfo(fullPath.wstring());
+
+        // 1. PDF Specs & Metric Capsule Bar
+        int pillH = 26;
+        int p1W = 100;
+        RECT p1Rc{paneX + 16, curY, paneX + 16 + p1W, curY + pillH};
+        drawRoundedRect(hdc, p1Rc, 6, RGB(38, 20, 26), RGB(120, 40, 52));
+        SelectObject(hdc, fontSmall_);
+        SetTextColor(hdc, RGB(255, 140, 160));
+        wchar_t pgBuf[32];
+        swprintf_s(pgBuf, L"📄 %d Pages", pdf.pageCount);
+        DrawTextW(hdc, pgBuf, -1, &p1Rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        int p2W = 80;
+        RECT p2Rc{p1Rc.right + 8, curY, p1Rc.right + 8 + p2W, curY + pillH};
+        drawRoundedRect(hdc, p2Rc, 6, RGB(26, 32, 46), RGB(56, 68, 96));
+        SetTextColor(hdc, RGB(96, 205, 255));
+        DrawTextW(hdc, pdf.version.c_str(), -1, &p2Rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        int p3W = std::clamp(static_cast<int>(width - 16 - (p2Rc.right + 8) - 90), 60, 150);
+        RECT p3Rc{p2Rc.right + 8, curY, p2Rc.right + 8 + p3W, curY + pillH};
+        drawRoundedRect(hdc, p3Rc, 6, RGB(26, 32, 46), RGB(56, 68, 96));
+        SetTextColor(hdc, RGB(210, 215, 230));
+        DrawTextW(hdc, pdf.pageFormat.c_str(), -1, &p3Rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+        RECT p4Rc{p3Rc.right + 8, curY, width - 16, curY + pillH};
+        drawRoundedRect(hdc, p4Rc, 6, RGB(26, 32, 46), RGB(56, 68, 96));
+        SetTextColor(hdc, RGB(210, 215, 230));
+        std::wstring szStr = formatSize(item.size);
+        DrawTextW(hdc, szStr.c_str(), -1, &p4Rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        curY += pillH + 12;
+
+        // 2. High-Fidelity Document Reader Canvas (Simulated Executive Document Paper)
+        int boxBottom = height - statusBarHeight_ - 195;
+        RECT docBox{paneX + 16, curY, width - 16, boxBottom};
+        drawRoundedRect(hdc, docBox, 10, RGB(18, 22, 32), RGB(54, 64, 88));
+
+        // Specular top rim
+        HPEN rimPen = CreatePen(PS_SOLID, 1, RGB(80, 95, 130));
+        SelectObject(hdc, rimPen);
+        MoveToEx(hdc, docBox.left + 8, docBox.top, nullptr);
+        LineTo(hdc, docBox.right - 8, docBox.top);
+        DeleteObject(rimPen);
+
+        // Header bar inside Document Reader Canvas
+        int hH = 32;
+        RECT inHeadRc{docBox.left, docBox.top, docBox.right, docBox.top + hH};
+        drawRoundedRect(hdc, inHeadRc, 10, RGB(24, 28, 40), RGB(24, 28, 40));
+
+        // Crimson PDF badge inside reader header
+        RECT pdfBadgeRc{docBox.left + 12, docBox.top + 6, docBox.left + 54, docBox.top + 26};
+        drawRoundedRect(hdc, pdfBadgeRc, 4, RGB(180, 36, 48), RGB(230, 60, 75));
+        SelectObject(hdc, fontSmall_);
+        SetTextColor(hdc, RGB(255, 255, 255));
+        DrawTextW(hdc, L"PDF", 3, &pdfBadgeRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        // Reader Title & Page Marker
+        wchar_t rMarkerBuf[128];
+        swprintf_s(rMarkerBuf, L"Document Content  •  Page 1 of %d", pdf.pageCount);
+        RECT rMarkerRc{docBox.left + 62, docBox.top, docBox.right - 130, docBox.top + hH};
+        SelectObject(hdc, fontBold_);
+        SetTextColor(hdc, RGB(235, 240, 255));
+        DrawTextW(hdc, rMarkerBuf, -1, &rMarkerRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+        // Right word count
+        wchar_t wCountBuf[64];
+        swprintf_s(wCountBuf, L"%zu words", pdf.totalWords);
+        RECT wCountRc{docBox.right - 120, docBox.top, docBox.right - 12, docBox.top + hH};
+        SelectObject(hdc, fontSmall_);
+        SetTextColor(hdc, RGB(150, 165, 190));
+        DrawTextW(hdc, wCountBuf, -1, &wCountRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+
+        // Divider
+        HPEN divPen = CreatePen(PS_SOLID, 1, RGB(42, 50, 70));
+        SelectObject(hdc, divPen);
+        MoveToEx(hdc, docBox.left, docBox.top + hH, nullptr);
+        LineTo(hdc, docBox.right, docBox.top + hH);
+        DeleteObject(divPen);
+
+        // Render Extracted Document Content Lines
+        int textY = docBox.top + hH + 10;
+        if (pdf.lines.empty()) {
+            RECT noticeRc{docBox.left + 20, textY + 20, docBox.right - 20, textY + 80};
+            SelectObject(hdc, fontBold_);
+            SetTextColor(hdc, RGB(215, 225, 240));
+            DrawTextW(hdc, pdf.isEncrypted ? L"🔒 Password Protected / Encrypted PDF" : L"📄 Scanned / Raster Image PDF Document", -1, &noticeRc, DT_CENTER | DT_NOPREFIX);
+
+            RECT subNoticeRc{docBox.left + 20, textY + 50, docBox.right - 20, textY + 120};
+            SelectObject(hdc, fontSmall_);
+            SetTextColor(hdc, RGB(145, 155, 175));
+            DrawTextW(hdc, pdf.isEncrypted ? L"This document requires credentials to decrypt content streams." : L"No embedded selectable text layer detected. Document contains scanned image pages.", -1, &subNoticeRc, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
+        } else {
+            SelectObject(hdc, fontRegular_);
+            size_t maxLinesToDraw = static_cast<size_t>(std::max<int>(0, static_cast<int>((docBox.bottom - textY - 26) / 20)));
+            size_t drawCount = std::min(pdf.lines.size(), maxLinesToDraw);
+
+            for (size_t li = 0; li < drawCount; ++li) {
+                const auto& line = pdf.lines[li];
+                RECT lineRc{docBox.left + 16, textY, docBox.right - 16, textY + 19};
+
+                // Bold first line / heading
+                if (li == 0) {
+                    SelectObject(hdc, fontBold_);
+                    SetTextColor(hdc, RGB(255, 255, 255));
+                } else {
+                    SelectObject(hdc, fontRegular_);
+                    SetTextColor(hdc, RGB(218, 226, 240));
+                }
+
+                DrawTextW(hdc, line.c_str(), -1, &lineRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+                textY += 20;
+            }
+
+            // Bottom Reader Status Bar inside canvas
+            RECT readStatRc{docBox.left + 16, docBox.bottom - 22, docBox.right - 16, docBox.bottom - 4};
+            SelectObject(hdc, fontSmall_);
+            SetTextColor(hdc, RGB(130, 145, 170));
+            wchar_t bStatBuf[128];
+            swprintf_s(bStatBuf, L"Extracted text  •  %zu total lines  •  %zu characters", pdf.lines.size(), pdf.totalCharacters);
+            DrawTextW(hdc, bStatBuf, -1, &readStatRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        }
+
+        curY = boxBottom + 10;
     } else if (isCode) {
         // Liquid Glass Code Inspector
         int boxBottom = height - statusBarHeight_ - 180;
@@ -4669,88 +4994,152 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
         int mY = curY + 8;
         SelectObject(hdc, fontSmall_);
 
-        // Row 1: Size
-        RECT kSizeRc{metaCard.left + 12, mY, metaCard.left + 80, mY + 18};
-        SetTextColor(hdc, RGB(130, 140, 160));
-        DrawTextW(hdc, L"Size", 4, &kSizeRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-
-        wchar_t rawSizeBuf[64];
-        if (item.isDirectory) swprintf_s(rawSizeBuf, L"Folder");
-        else swprintf_s(rawSizeBuf, L"%s (%llu bytes)", formatSize(item.size).c_str(), static_cast<unsigned long long>(item.size));
-        RECT vSizeRc{metaCard.left + 85, mY, metaCard.right - 12, mY + 18};
-        SetTextColor(hdc, RGB(220, 225, 240));
-        DrawTextW(hdc, rawSizeBuf, -1, &vSizeRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-
-        mY += 22;
-
-        // Row 2: Date Modified
-        RECT kModRc{metaCard.left + 12, mY, metaCard.left + 80, mY + 18};
-        SetTextColor(hdc, RGB(130, 140, 160));
-        DrawTextW(hdc, L"Modified", 8, &kModRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-
-        RECT vModRc{metaCard.left + 85, mY, metaCard.right - 12, mY + 18};
-        SetTextColor(hdc, RGB(220, 225, 240));
-        std::wstring modStr = formatTime(item.mtime);
-        DrawTextW(hdc, modStr.c_str(), -1, &vModRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-
-        mY += 22;
-
-        // Row 3: Attributes
-        if (mY + 18 < metaBottom) {
-            RECT kAttrRc{metaCard.left + 12, mY, metaCard.left + 80, mY + 18};
+        auto drawMetaRow = [&](const wchar_t* key, const std::wstring& val, COLORREF valCol = RGB(220, 225, 240)) {
+            if (mY + 18 >= metaBottom) return;
+            RECT kRc{metaCard.left + 12, mY, metaCard.left + 80, mY + 18};
             SetTextColor(hdc, RGB(130, 140, 160));
-            DrawTextW(hdc, L"Attributes", 10, &kAttrRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            DrawTextW(hdc, key, -1, &kRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-            std::wstring attrStr;
-            if (item.attributes & FILE_ATTRIBUTE_READONLY) attrStr += L"Read-only ";
-            if (item.attributes & FILE_ATTRIBUTE_HIDDEN) attrStr += L"Hidden ";
-            if (item.attributes & FILE_ATTRIBUTE_SYSTEM) attrStr += L"System ";
-            if (attrStr.empty()) attrStr = L"Normal / Archive";
+            RECT vRc{metaCard.left + 85, mY, metaCard.right - 12, mY + 18};
+            SetTextColor(hdc, valCol);
+            DrawTextW(hdc, val.c_str(), -1, &vRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+            mY += 22;
+        };
 
-            RECT vAttrRc{metaCard.left + 85, mY, metaCard.right - 12, mY + 18};
-            SetTextColor(hdc, RGB(160, 205, 245));
-            DrawTextW(hdc, attrStr.c_str(), -1, &vAttrRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        if (isPdf) {
+            const auto& pdf = getOrLoadPdfInfo(fullPath.wstring());
+            drawMetaRow(L"Title", pdf.title.empty() ? item.name : pdf.title);
+            drawMetaRow(L"Author", pdf.author.empty() ? L"Not specified" : pdf.author);
+            if (!pdf.creationDate.empty()) drawMetaRow(L"Created", pdf.creationDate);
+            else drawMetaRow(L"Modified", formatTime(item.mtime));
+            drawMetaRow(L"Pages", std::to_wstring(pdf.pageCount) + L" pages (" + pdf.pageFormat + L")");
+            drawMetaRow(L"Security", pdf.isEncrypted ? L"Protected / Encrypted" : L"Standard (Open)", pdf.isEncrypted ? RGB(255, 140, 140) : RGB(140, 230, 170));
+        } else {
+            // Row 1: Size
+            RECT kSizeRc{metaCard.left + 12, mY, metaCard.left + 80, mY + 18};
+            SetTextColor(hdc, RGB(130, 140, 160));
+            DrawTextW(hdc, L"Size", 4, &kSizeRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+            wchar_t rawSizeBuf[64];
+            if (item.isDirectory) swprintf_s(rawSizeBuf, L"Folder");
+            else swprintf_s(rawSizeBuf, L"%s (%llu bytes)", formatSize(item.size).c_str(), static_cast<unsigned long long>(item.size));
+            RECT vSizeRc{metaCard.left + 85, mY, metaCard.right - 12, mY + 18};
+            SetTextColor(hdc, RGB(220, 225, 240));
+            DrawTextW(hdc, rawSizeBuf, -1, &vSizeRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+            mY += 22;
+
+            // Row 2: Date Modified
+            RECT kModRc{metaCard.left + 12, mY, metaCard.left + 80, mY + 18};
+            SetTextColor(hdc, RGB(130, 140, 160));
+            DrawTextW(hdc, L"Modified", 8, &kModRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+            RECT vModRc{metaCard.left + 85, mY, metaCard.right - 12, mY + 18};
+            SetTextColor(hdc, RGB(220, 225, 240));
+            std::wstring modStr = formatTime(item.mtime);
+            DrawTextW(hdc, modStr.c_str(), -1, &vModRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+            mY += 22;
+
+            // Row 3: Attributes
+            if (mY + 18 < metaBottom) {
+                RECT kAttrRc{metaCard.left + 12, mY, metaCard.left + 80, mY + 18};
+                SetTextColor(hdc, RGB(130, 140, 160));
+                DrawTextW(hdc, L"Attributes", 10, &kAttrRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+                std::wstring attrStr;
+                if (item.attributes & FILE_ATTRIBUTE_READONLY) attrStr += L"Read-only ";
+                if (item.attributes & FILE_ATTRIBUTE_HIDDEN) attrStr += L"Hidden ";
+                if (item.attributes & FILE_ATTRIBUTE_SYSTEM) attrStr += L"System ";
+                if (attrStr.empty()) attrStr = L"Normal / Archive";
+
+                RECT vAttrRc{metaCard.left + 85, mY, metaCard.right - 12, mY + 18};
+                SetTextColor(hdc, RGB(160, 205, 245));
+                DrawTextW(hdc, attrStr.c_str(), -1, &vAttrRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+            }
         }
     }
 
     // Liquid Glass Action Dock (Bottom)
     int btnY = height - statusBarHeight_ - 52;
+    int availW = (width - 16) - (paneX + 16);
+    int numBtns = (isPdf && previewPaneWidth_ >= 460) ? 4 : 3;
+    int spacing = 8;
+    int singleW = (availW - spacing * (numBtns - 1)) / numBtns;
 
-    // 1. Open File Button (Primary radiant cyan glass)
-    RECT openBtnRc{paneX + 16, btnY, paneX + 138, btnY + 36};
-    drawRoundedRect(hdc, openBtnRc, 8, RGB(20, 50, 76), RGB(96, 205, 255));
+    // 1. Open Button
+    RECT b1Rc{paneX + 16, btnY, paneX + 16 + singleW, btnY + 36};
+    drawRoundedRect(hdc, b1Rc, 8, RGB(20, 50, 76), RGB(96, 205, 255));
     SelectObject(hdc, fontIconsSmall_);
     SetTextColor(hdc, RGB(96, 205, 255));
-    RECT oIconRc{openBtnRc.left + 8, btnY, openBtnRc.left + 26, btnY + 36};
-    DrawTextW(hdc, L"\uE8A7", 1, &oIconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    RECT b1Icon{b1Rc.left + 8, btnY, b1Rc.left + 26, btnY + 36};
+    DrawTextW(hdc, L"\uE8A7", 1, &b1Icon, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     SelectObject(hdc, fontRegular_);
     SetTextColor(hdc, RGB(255, 255, 255));
-    RECT oTextRc{openBtnRc.left + 28, btnY, openBtnRc.right - 6, btnY + 36};
-    DrawTextW(hdc, L"Open File", 9, &oTextRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    RECT b1Text{b1Rc.left + 28, btnY, b1Rc.right - 6, btnY + 36};
+    DrawTextW(hdc, isPdf ? L"Open PDF" : L"Open File", -1, &b1Text, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
-    // 2. Show in Folder Button (Secondary dark glass)
-    RECT folderBtnRc{paneX + 144, btnY, paneX + 276, btnY + 36};
-    drawRoundedRect(hdc, folderBtnRc, 8, RGB(26, 32, 44), RGB(56, 68, 92));
+    // 2. In Folder Button
+    RECT b2Rc{b1Rc.right + spacing, btnY, b1Rc.right + spacing + singleW, btnY + 36};
+    drawRoundedRect(hdc, b2Rc, 8, RGB(26, 32, 44), RGB(56, 68, 92));
     SelectObject(hdc, fontIconsSmall_);
     SetTextColor(hdc, RGB(255, 195, 70));
-    RECT fIconRc{folderBtnRc.left + 8, btnY, folderBtnRc.left + 26, btnY + 36};
-    DrawTextW(hdc, L"\uE8B7", 1, &fIconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    RECT b2Icon{b2Rc.left + 8, btnY, b2Rc.left + 26, btnY + 36};
+    DrawTextW(hdc, L"\uE8B7", 1, &b2Icon, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     SelectObject(hdc, fontRegular_);
     SetTextColor(hdc, RGB(225, 230, 245));
-    RECT fTextRc{folderBtnRc.left + 28, btnY, folderBtnRc.right - 6, btnY + 36};
-    DrawTextW(hdc, L"In Folder", 9, &fTextRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    RECT b2Text{b2Rc.left + 28, btnY, b2Rc.right - 6, btnY + 36};
+    DrawTextW(hdc, L"In Folder", 9, &b2Text, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
-    // 3. Copy Path Button (Tertiary dark glass)
-    RECT copyBtnRc{paneX + 282, btnY, width - 16, btnY + 36};
-    drawRoundedRect(hdc, copyBtnRc, 8, RGB(26, 32, 44), RGB(56, 68, 92));
-    SelectObject(hdc, fontIconsSmall_);
-    SetTextColor(hdc, RGB(160, 175, 205));
-    RECT cIconRc{copyBtnRc.left + 8, btnY, copyBtnRc.left + 26, btnY + 36};
-    DrawTextW(hdc, L"\uE8C8", 1, &cIconRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    SelectObject(hdc, fontRegular_);
-    SetTextColor(hdc, RGB(225, 230, 245));
-    RECT cTextRc{copyBtnRc.left + 28, btnY, copyBtnRc.right - 6, btnY + 36};
-    DrawTextW(hdc, L"Copy Path", 9, &cTextRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    if (numBtns == 4) {
+        // 3. Copy Path Button
+        RECT b3Rc{b2Rc.right + spacing, btnY, b2Rc.right + spacing + singleW, btnY + 36};
+        drawRoundedRect(hdc, b3Rc, 8, RGB(26, 32, 44), RGB(56, 68, 92));
+        SelectObject(hdc, fontIconsSmall_);
+        SetTextColor(hdc, RGB(160, 175, 205));
+        RECT b3Icon{b3Rc.left + 8, btnY, b3Rc.left + 26, btnY + 36};
+        DrawTextW(hdc, L"\uE8C8", 1, &b3Icon, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        SelectObject(hdc, fontRegular_);
+        SetTextColor(hdc, RGB(225, 230, 245));
+        RECT b3Text{b3Rc.left + 28, btnY, b3Rc.right - 6, btnY + 36};
+        DrawTextW(hdc, L"Copy Path", 9, &b3Text, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+        // 4. Copy Text Button
+        RECT b4Rc{b3Rc.right + spacing, btnY, width - 16, btnY + 36};
+        drawRoundedRect(hdc, b4Rc, 8, RGB(34, 26, 44), RGB(160, 96, 255));
+        SelectObject(hdc, fontIconsSmall_);
+        SetTextColor(hdc, RGB(210, 150, 255));
+        RECT b4Icon{b4Rc.left + 8, btnY, b4Rc.left + 26, btnY + 36};
+        DrawTextW(hdc, L"\uE8C8", 1, &b4Icon, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        SelectObject(hdc, fontRegular_);
+        SetTextColor(hdc, RGB(245, 230, 255));
+        RECT b4Text{b4Rc.left + 28, btnY, b4Rc.right - 6, btnY + 36};
+        DrawTextW(hdc, L"Copy Text", 9, &b4Text, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    } else {
+        // 3. Copy Text (or Copy Path if not PDF)
+        RECT b3Rc{b2Rc.right + spacing, btnY, width - 16, btnY + 36};
+        COLORREF bgC = isPdf ? RGB(34, 26, 44) : RGB(26, 32, 44);
+        COLORREF bdrC = isPdf ? RGB(160, 96, 255) : RGB(56, 68, 92);
+        drawRoundedRect(hdc, b3Rc, 8, bgC, bdrC);
+        SelectObject(hdc, fontIconsSmall_);
+        SetTextColor(hdc, isPdf ? RGB(210, 150, 255) : RGB(160, 175, 205));
+        RECT b3Icon{b3Rc.left + 8, btnY, b3Rc.left + 26, btnY + 36};
+        DrawTextW(hdc, L"\uE8C8", 1, &b3Icon, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        SelectObject(hdc, fontRegular_);
+        SetTextColor(hdc, isPdf ? RGB(245, 230, 255) : RGB(225, 230, 245));
+        RECT b3Text{b3Rc.left + 28, btnY, b3Rc.right - 6, btnY + 36};
+        DrawTextW(hdc, isPdf ? L"Copy Text" : L"Copy Path", -1, &b3Text, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    }
+}
+
+const PdfDocumentInfo& MainWindow::getOrLoadPdfInfo(const std::wstring& fullPath) {
+    auto it = pdfCache_.find(fullPath);
+    if (it != pdfCache_.end()) {
+        return it->second;
+    }
+    PdfDocumentInfo info = PdfInspector::inspect(fullPath);
+    auto [insertedIt, _] = pdfCache_.emplace(fullPath, std::move(info));
+    return insertedIt->second;
 }
 
 void MainWindow::paintThisPcView(HDC hdc, int width, int height) {
@@ -5116,9 +5505,11 @@ void MainWindow::onPaint(HDC hdc) {
     int width = clientRc.right;
     int height = clientRc.bottom;
 
-    // Double-buffered rendering to prevent any flicker
-    HDC memDC = CreateCompatibleDC(hdc);
-    HBITMAP memBmp = CreateCompatibleBitmap(hdc, width, height);
+    // Double-buffered rendering to prevent any flicker (using window DC as color reference)
+    HDC refDC = GetDC(hwnd_);
+    HDC memDC = CreateCompatibleDC(refDC ? refDC : hdc);
+    HBITMAP memBmp = CreateCompatibleBitmap(refDC ? refDC : hdc, width, height);
+    if (refDC) ReleaseDC(hwnd_, refDC);
     HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, memBmp);
 
     // Deep Dark Canvas Background (RGB 22, 22, 22)
