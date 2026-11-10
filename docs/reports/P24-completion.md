@@ -96,6 +96,10 @@ Total Test time (real) = 5.45 sec
 - `godxplr_pdf_preview_widened.png` (102,451 bytes): Widened 580px Quick Look preview panel.
 - `godxplr_pdf_preview_narrowed.png` (88,140 bytes): Narrowed 340px Quick Look preview panel.
 
+- `godxplr_ppt_template_fixed.png` (119,695 bytes): Clean PDF slide presentation card for complex PowerPoint / Google Slides PDFs with embedded vector graphics, showing `HACK-4-CROWN template.pptx` UTF-16 BE title, 16:9 Presentation format, and zero raw binary font noise.
+- `godxplr_responsive_compact.png` (75,830 bytes): Compact 1024×720 screen layout with auto-clamped Quick Look pane, scaling search box, and zero horizontal overflow.
+- `godxplr_responsive_wide.png` (111,270 bytes): Widescreen 1580×920 layout with 100% surface-spanning columns and zero white scrollbar margins.
+
 ---
 
 ## 4. Phase Gate Status
@@ -104,3 +108,21 @@ Total Test time (real) = 5.45 sec
 - Zero compiler warnings or errors (`MSVC /W4 /WX`).
 - 28/28 unit and integration tests passing (100%).
 - Full visual confirmation across all primary views.
+
+---
+
+## 5. UI/UX Responsiveness & PDF Sanitization Refinements
+
+1. **Native PDF Stream Filtering & Text Sanitization (`pdf_inspector.h`):**
+   - Stream dictionaries explicitly filter out `/Subtype /Image`, `/FontFile`, `/Type /Font`, `/Type /ObjStm`, and `/Type /Metadata`.
+   - UTF-16 BE BOM (`\xFE\xFF`) strings are decoded into valid Unicode wide characters, eliminating corrupted `Title: þÿ` metadata.
+   - 16:9 and 4:3 aspect ratios automatically classify slide decks as `16:9 Presentation (Widescreen)` or `4:3 Presentation (Standard)`.
+   - Vector slide presentations and scanned graphics without clean selectable text display an executive presentation card instead of raw glyph byte garbage.
+2. **Elimination of Non-Client System Scrollbar (`main_window.cpp`):**
+   - Removed `WS_VSCROLL` from `CreateWindowExW`, permanently eliminating the light-gray/white vertical non-client system scrollbar strip.
+3. **Screen Size Responsiveness & 100% Surface Occupancy:**
+   - Nav bar search box and address bar dynamically flex without breaking or overflowing (`searchW = std::clamp((width - 400) / 4, 160, 280)`).
+   - Preview pane automatically clamps proportionally (`previewPaneWidth_ = std::min(previewPaneWidth_, maxPaneW)`), guaranteeing breathing room for the directory view on small screens.
+   - List columns (`Name`, `Date Modified`, `Type`, `Size`) dynamically expand so the Name column fills all remaining space, eliminating horizontal dead space.
+   - Removed the overlapping `Path: Downloads` hover tooltip glitch in Home view.
+

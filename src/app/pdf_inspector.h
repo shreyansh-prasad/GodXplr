@@ -254,8 +254,17 @@ inline bool inflateData(const uint8_t* in, size_t inLen, std::vector<uint8_t>& o
     return true;
 }
 
-// Decodes a PDF string (handling parentheses escapes and octal codes)
+// Decodes a PDF string (handling parentheses escapes, octal codes, and UTF-16BE BOM)
 inline std::wstring decodePdfLiteralString(const std::string& str) {
+    if (str.size() >= 2 && static_cast<uint8_t>(str[0]) == 0xFE && static_cast<uint8_t>(str[1]) == 0xFF) {
+        std::wstring out;
+        for (size_t i = 2; i + 1 < str.size(); i += 2) {
+            uint16_t w = static_cast<uint16_t>((static_cast<uint8_t>(str[i]) << 8) | static_cast<uint8_t>(str[i + 1]));
+            if (w != 0) out.push_back(static_cast<wchar_t>(w));
+        }
+        return out;
+    }
+
     std::wstring out;
     for (size_t i = 0; i < str.size(); ++i) {
         if (str[i] == '\\' && i + 1 < str.size()) {
@@ -392,6 +401,10 @@ public:
                         info.pageFormat = L"A4 (210 × 297 mm)";
                     } else if (std::abs(info.widthPt - 612) < 15 && std::abs(info.heightPt - 1008) < 15) {
                         info.pageFormat = L"US Legal (8.5\" × 14\")";
+                    } else if (info.heightPt > 0 && std::abs((info.widthPt / info.heightPt) - (16.0 / 9.0)) < 0.05) {
+                        info.pageFormat = L"16:9 Presentation (Widescreen)";
+                    } else if (info.heightPt > 0 && std::abs((info.widthPt / info.heightPt) - (4.0 / 3.0)) < 0.05) {
+                        info.pageFormat = L"4:3 Presentation (Standard)";
                     } else {
                         wchar_t dimBuf[64];
                         swprintf_s(dimBuf, L"%d × %d pt", static_cast<int>(info.widthPt), static_cast<int>(info.heightPt));
@@ -453,12 +466,31 @@ public:
             size_t endPos = rawData.find("endstream", afterStream);
             if (endPos == std::string::npos) break;
 
-            // Check if stream is FlateDecode
+            // Check if stream is an image, font file, metadata or object stream
             size_t dictStart = rawData.rfind("<<", sPos);
             bool isFlate = false;
-            if (dictStart != std::string::npos && dictStart + 300 >= sPos) {
+            bool shouldSkip = false;
+            if (dictStart != std::string::npos && dictStart + 500 >= sPos) {
                 std::string dict = rawData.substr(dictStart, sPos - dictStart);
+                if (dict.find("/Subtype /Image") != std::string::npos ||
+                    dict.find("/Subtype/Image") != std::string::npos ||
+                    dict.find("/DCTDecode") != std::string::npos ||
+                    dict.find("/JPXDecode") != std::string::npos ||
+                    dict.find("/JBIG2Decode") != std::string::npos ||
+                    dict.find("/FontFile") != std::string::npos ||
+                    dict.find("/Type /Font") != std::string::npos ||
+                    dict.find("/Type/Font") != std::string::npos ||
+                    dict.find("/Type /ObjStm") != std::string::npos ||
+                    dict.find("/Type /XRef") != std::string::npos ||
+                    dict.find("/Type /Metadata") != std::string::npos) {
+                    shouldSkip = true;
+                }
                 if (dict.find("/FlateDecode") != std::string::npos) isFlate = true;
+            }
+
+            if (shouldSkip) {
+                sPos = endPos + 9;
+                continue;
             }
 
             const uint8_t* streamData = reinterpret_cast<const uint8_t*>(&rawData[afterStream]);
@@ -467,7 +499,15 @@ public:
             if (isFlate) {
                 std::vector<uint8_t> decomp;
                 if (detail::inflateData(streamData, streamLen, decomp)) {
-                    streamBuffers.emplace_back(reinterpret_cast<const char*>(decomp.data()), decomp.size());
+                    // Check if decompressed data is a TrueType/OpenType font or binary blob
+                    if (decomp.size() >= 4 && (
+                        (decomp[0] == 0x00 && decomp[1] == 0x01 && decomp[2] == 0x00 && decomp[3] == 0x00) ||
+                        (decomp[0] == 'O' && decomp[1] == 'T' && decomp[2] == 'T' && decomp[3] == 'O') ||
+                        (decomp[0] == 't' && decomp[1] == 'r' && decomp[2] == 'u' && decomp[3] == 'e'))) {
+                        // Skip binary font
+                    } else {
+                        streamBuffers.emplace_back(reinterpret_cast<const char*>(decomp.data()), decomp.size());
+                    }
                 }
             } else {
                 streamBuffers.emplace_back(&rawData[afterStream], streamLen);
@@ -592,24 +632,73 @@ public:
             info.lines.push_back(currentLine);
         }
 
-        // Clean lines & compute metrics
+        // Clean lines & compute metrics with human readability verification
         std::vector<std::wstring> cleanLines;
+        size_t totalValidWords = 0;
         for (auto& l : info.lines) {
             // Trim whitespace
             while (!l.empty() && (l.front() == L' ' || l.front() == L'\t' || l.front() == L'\r' || l.front() == L'\n')) l.erase(l.begin());
             while (!l.empty() && (l.back() == L' ' || l.back() == L'\t' || l.back() == L'\r' || l.back() == L'\n')) l.pop_back();
-            if (!l.empty()) {
-                cleanLines.push_back(l);
-                info.totalCharacters += l.length();
-                // Count words
-                bool inWord = false;
-                for (wchar_t ch : l) {
-                    if (ch == L' ' || ch == L'\t') inWord = false;
-                    else if (!inWord) { inWord = true; info.totalWords++; }
+            if (l.empty()) continue;
+
+            // Check printable ratio and human readability (filter unmapped Identity-H glyph codes or binary noise)
+            size_t printableCount = 0;
+            size_t letterCount = 0;
+            size_t glyphNoiseCount = 0;
+            for (wchar_t ch : l) {
+                if ((ch >= 32 && ch <= 126) || ch == L'\t') {
+                    printableCount++;
+                    if ((ch >= L'a' && ch <= L'z') || (ch >= L'A' && ch <= L'Z') || (ch >= L'0' && ch <= L'9')) {
+                        letterCount++;
+                    }
+                } else if (ch >= 0x00A0 && ch <= 0x024F) {
+                    printableCount++;
+                    glyphNoiseCount++;
+                } else {
+                    glyphNoiseCount += 2;
                 }
             }
+
+            if (printableCount == 0 || static_cast<double>(glyphNoiseCount) / static_cast<double>(l.length()) > 0.20 || letterCount < 2) {
+                continue; // Skip lines that are raw font glyph codes or binary artifacts
+            }
+
+            // Count words in this line
+            bool inWord = false;
+            size_t lineWords = 0;
+            for (wchar_t ch : l) {
+                if (ch == L' ' || ch == L'\t' || iswpunct(ch)) {
+                    inWord = false;
+                } else if (!inWord) {
+                    inWord = true;
+                    lineWords++;
+                }
+            }
+
+            if (lineWords > 0) {
+                totalValidWords += lineWords;
+                info.totalCharacters += l.length();
+                cleanLines.push_back(l);
+            }
+        }
+
+        // If the document has fewer than 3 total valid words across all lines, it's a presentation / vector slide deck
+        if (totalValidWords < 3) {
+            cleanLines.clear();
+            info.totalWords = 0;
+            info.totalCharacters = 0;
+        } else {
+            info.totalWords = totalValidWords;
         }
         info.lines = std::move(cleanLines);
+
+        // Clean up title if it contains BOM, whitespace, or empty
+        while (!info.title.empty() && (info.title.front() == L' ' || info.title.front() == 0xFEFF || info.title.front() == L'\t' || info.title.front() == 0x00FE || info.title.front() == 0x00FF)) {
+            info.title.erase(info.title.begin());
+        }
+        while (!info.title.empty() && (info.title.back() == L' ' || info.title.back() == 0xFEFF || info.title.back() == L'\t')) {
+            info.title.pop_back();
+        }
 
         return info;
     }

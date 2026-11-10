@@ -402,7 +402,7 @@ MainWindow* MainWindow::create(HINSTANCE hInstance, const std::wstring& initialP
         WS_EX_APPWINDOW,
         kClassName,
         L"GodXplr",
-        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_VSCROLL | WS_VISIBLE,
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_VISIBLE,
         initX, initY, initW, initH,
         nullptr, nullptr, hInstance, window);
 
@@ -1485,12 +1485,16 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
 void MainWindow::onResize(int width, int height) {
     (void)height;
+    if (showPreviewPane_) {
+        int maxPaneW = std::max(260, (width - sidebarWidth_) / 2);
+        if (previewPaneWidth_ > maxPaneW) previewPaneWidth_ = maxPaneW;
+        if (width < 760) showPreviewPane_ = false;
+    }
     if (editAddress_ && editSearch_) {
-        int rightMargin = (showDetailsPane_ ? detailsPaneWidth_ : (showPreviewPane_ ? previewPaneWidth_ : 0));
-        int searchW = 280;
-        int searchX = width - rightMargin - searchW - 20;
+        int searchW = std::clamp((width - 400) / 4, 160, 280);
+        int searchX = width - searchW - 16;
         int addrX = 165;
-        int addrW = searchX - addrX - 16;
+        int addrW = std::max(100, searchX - addrX - 12);
         int boxH = 36;
         int boxY = tabBarHeight_ + (navBarHeight_ - boxH) / 2;
 
@@ -3724,11 +3728,10 @@ void MainWindow::paintNavAndAddressBar(HDC hdc, int width) {
     drawNavBtn(88, L"\uE74A", PressedTarget::NavUp, (!isHomeView_ && !isThisPcView_));
     drawNavBtn(126, L"\uE72C", PressedTarget::NavRefresh, true);
 
-    int rightMargin = (showDetailsPane_ ? detailsPaneWidth_ : (showPreviewPane_ ? previewPaneWidth_ : 0));
-    int searchW = 280;
-    int searchX = width - rightMargin - searchW - 20;
+    int searchW = std::clamp((width - 400) / 4, 160, 280);
+    int searchX = width - searchW - 16;
     int addrX = 165;
-    int addrW = searchX - addrX - 16;
+    int addrW = std::max(100, searchX - addrX - 12);
     int boxH = 36;
     int boxY = navTop + (navBarHeight_ - boxH) / 2;
     RECT addrRc{addrX, boxY, addrX + addrW, boxY + boxH};
@@ -4360,17 +4363,16 @@ void MainWindow::paintHomeView(HDC hdc, int width, int height) {
     SetTextColor(hdc, RGB(150, 150, 150));
 
     int colStart = surfaceLeft + 36 + (showCheckBoxes_ ? 28 : 0);
-    RECT colNameRc{colStart, tableHeaderTop, colStart + colNameWidth_, tableHeaderTop + headerHeight_};
+    int homeFixed = colDateWidth_ + 140;
+    int availHomeW = effWidth - colStart;
+    int homeNameW = std::clamp(availHomeW - homeFixed, 220, 600);
+    RECT colNameRc{colStart, tableHeaderTop, colStart + homeNameW, tableHeaderTop + headerHeight_};
     RECT colDateRc{colNameRc.right, tableHeaderTop, colNameRc.right + colDateWidth_, tableHeaderTop + headerHeight_};
-    RECT colLocRc{colDateRc.right, tableHeaderTop, colDateRc.right + colLocWidth_, tableHeaderTop + headerHeight_};
-    RECT colAccRc{colLocRc.right, tableHeaderTop, colLocRc.right + colAccountWidth_, tableHeaderTop + headerHeight_};
-    RECT colActRc{colAccRc.right, tableHeaderTop, effWidth - 20, tableHeaderTop + headerHeight_};
+    RECT colLocRc{colDateRc.right, tableHeaderTop, effWidth - 20, tableHeaderTop + headerHeight_};
 
     DrawTextW(hdc, L"Name", 4, &colNameRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     DrawTextW(hdc, L"Date accessed", 13, &colDateRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     DrawTextW(hdc, L"File location", 13, &colLocRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-    DrawTextW(hdc, L"Account", 7, &colAccRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-    DrawTextW(hdc, L"Activity", 8, &colActRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
     // Rows
     int rowY = tableHeaderTop + headerHeight_;
@@ -4426,7 +4428,7 @@ void MainWindow::paintHomeView(HDC hdc, int width, int height) {
         }
 
         SetTextColor(hdc, RGB(255, 255, 255));
-        RECT nameCell{colStart, rowRc.top, colStart + colNameWidth_ - 10, rowRc.bottom};
+        RECT nameCell{colStart, rowRc.top, colStart + homeNameW - 10, rowRc.bottom};
         DrawTextW(hdc, displayName.c_str(), -1, &nameCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
 
         // Hover quick action buttons (Open Folder, Star, More)
@@ -4444,13 +4446,6 @@ void MainWindow::paintHomeView(HDC hdc, int width, int height) {
                 RECT mRc{btnX + 48, rowRc.top + 6, btnX + 70, rowRc.bottom - 6};
                 DrawTextW(hdc, L"\uE712", 1, &mRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             }
-
-            // Hover floating tooltip pill: "Path: Downloads"
-            RECT tipRc{colLocRc.left - 4, rowRc.top + 6, colLocRc.left + 100, rowRc.bottom - 6};
-            drawRoundedRect(hdc, tipRc, 6, RGB(38, 38, 38), RGB(70, 70, 70));
-            SelectObject(hdc, fontSmall_);
-            SetTextColor(hdc, RGB(220, 220, 220));
-            DrawTextW(hdc, L"Path: Downloads", -1, &tipRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
         }
 
         SelectObject(hdc, fontSmall_);
@@ -4459,7 +4454,7 @@ void MainWindow::paintHomeView(HDC hdc, int width, int height) {
         std::wstring dt = formatTime(item.mtime);
         DrawTextW(hdc, dt.c_str(), -1, &dateCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
-        RECT locCell{colDateRc.right, rowRc.top, colLocRc.right, rowRc.bottom};
+        RECT locCell{colDateRc.right, rowRc.top, effWidth - 20, rowRc.bottom};
         DrawTextW(hdc, item.location.c_str(), -1, &locCell, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
     }
 }
@@ -4709,7 +4704,9 @@ void MainWindow::paintDirectoryView(HDC hdc, int width, int height) {
     SetTextCharacterExtra(hdc, 1); // Apple Optical Tracking §15
 
     int colStart = surfaceLeft + 36 + (showCheckBoxes_ ? 28 : 0);
-    int curNameW = isSearching_ ? 280 : colNameWidth_;
+    int totalFixedWidth = (isSearching_ ? 200 : 0) + (isSearching_ ? 160 : colDateWidth_) + (isSearching_ ? 120 : colTypeWidth_) + colSizeWidth_ + 32;
+    int availW = effWidth - colStart;
+    int curNameW = std::max(200, availW - totalFixedWidth);
     RECT colNameRc{colStart, tableHeaderTop, colStart + curNameW, tableHeaderTop + headerHeight_};
     RECT colLocRc{colNameRc.right, tableHeaderTop, colNameRc.right + (isSearching_ ? 200 : 0), tableHeaderTop + headerHeight_};
     RECT colDateRc{colLocRc.right, tableHeaderTop, colLocRc.right + (isSearching_ ? 160 : colDateWidth_), tableHeaderTop + headerHeight_};
@@ -4918,7 +4915,9 @@ void MainWindow::paintDetailsPane(HDC hdc, int width, int height) {
 void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
     if (!showPreviewPane_) return;
 
-    int paneX = width - previewPaneWidth_;
+    int maxPaneW = std::max(260, (width - sidebarWidth_) / 2);
+    int effPaneW = std::clamp(previewPaneWidth_, 260, maxPaneW);
+    int paneX = width - effPaneW;
     int contentTop = tabBarHeight_ + navBarHeight_ + commandBarHeight_;
     RECT paneRc{paneX, contentTop, width, height - statusBarHeight_};
 
@@ -5175,16 +5174,27 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
 
         // Reader Title & Page Marker
         wchar_t rMarkerBuf[128];
-        swprintf_s(rMarkerBuf, L"Document Content  •  Page 1 of %d", pdf.pageCount);
-        RECT rMarkerRc{docBox.left + 62, docBox.top, docBox.right - 130, docBox.top + hH};
+        bool isDeck = (pdf.pageFormat.find(L"Presentation") != std::wstring::npos);
+        if (pdf.totalWords > 0) {
+            swprintf_s(rMarkerBuf, L"Text Content • Page 1 of %d", pdf.pageCount);
+        } else if (isDeck) {
+            swprintf_s(rMarkerBuf, L"Presentation • %d Slides", pdf.pageCount);
+        } else {
+            swprintf_s(rMarkerBuf, L"Document • %d Pages", pdf.pageCount);
+        }
+        RECT rMarkerRc{docBox.left + 58, docBox.top, docBox.right - 95, docBox.top + hH};
         SelectObject(hdc, fontBold_);
         SetTextColor(hdc, RGB(235, 240, 255));
-        DrawTextW(hdc, rMarkerBuf, -1, &rMarkerRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        DrawTextW(hdc, rMarkerBuf, -1, &rMarkerRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
 
-        // Right word count
+        // Right word count / format indicator
         wchar_t wCountBuf[64];
-        swprintf_s(wCountBuf, L"%zu words", pdf.totalWords);
-        RECT wCountRc{docBox.right - 120, docBox.top, docBox.right - 12, docBox.top + hH};
+        if (pdf.totalWords > 0) {
+            swprintf_s(wCountBuf, L"%zu words", pdf.totalWords);
+        } else {
+            swprintf_s(wCountBuf, isDeck ? L"%d slides" : L"%d pages", pdf.pageCount);
+        }
+        RECT wCountRc{docBox.right - 90, docBox.top, docBox.right - 12, docBox.top + hH};
         SelectObject(hdc, fontSmall_);
         SetTextColor(hdc, RGB(150, 165, 190));
         DrawTextW(hdc, wCountBuf, -1, &wCountRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
@@ -5199,15 +5209,23 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
         // Render Extracted Document Content Lines
         int textY = docBox.top + hH + 10;
         if (pdf.lines.empty()) {
-            RECT noticeRc{docBox.left + 20, textY + 20, docBox.right - 20, textY + 80};
+            RECT noticeRc{docBox.left + 14, textY + 20, docBox.right - 14, textY + 60};
             SelectObject(hdc, fontBold_);
             SetTextColor(hdc, RGB(215, 225, 240));
-            DrawTextW(hdc, pdf.isEncrypted ? L"🔒 Password Protected / Encrypted PDF" : L"📄 Scanned / Raster Image PDF Document", -1, &noticeRc, DT_CENTER | DT_NOPREFIX);
+            const wchar_t* headMsg = pdf.isEncrypted
+                ? L"🔒 Password Protected / Encrypted PDF"
+                : (isDeck ? L"📊 Slide Deck Presentation" : L"📄 Vector Graphic Document");
+            DrawTextW(hdc, headMsg, -1, &noticeRc, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
 
-            RECT subNoticeRc{docBox.left + 20, textY + 50, docBox.right - 20, textY + 120};
+            RECT subNoticeRc{docBox.left + 14, textY + 50, docBox.right - 14, textY + 120};
             SelectObject(hdc, fontSmall_);
             SetTextColor(hdc, RGB(145, 155, 175));
-            DrawTextW(hdc, pdf.isEncrypted ? L"This document requires credentials to decrypt content streams." : L"No embedded selectable text layer detected. Document contains scanned image pages.", -1, &subNoticeRc, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
+            const wchar_t* bodyMsg = pdf.isEncrypted
+                ? L"This document requires credentials to decrypt content streams."
+                : (isDeck
+                    ? L"Widescreen presentation with embedded vector artwork and graphic typography."
+                    : L"No raw selectable ASCII text stream. Document contains vector artwork, font glyphs, or scanned graphics.");
+            DrawTextW(hdc, bodyMsg, -1, &subNoticeRc, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
         } else {
             SelectObject(hdc, fontRegular_);
             size_t maxLinesToDraw = static_cast<size_t>(std::max<int>(0, static_cast<int>((docBox.bottom - textY - 26) / 20)));
@@ -5419,7 +5437,11 @@ void MainWindow::paintPreviewPane(HDC hdc, int width, int height) {
 
         if (isPdf) {
             const auto& pdf = getOrLoadPdfInfo(fullPath.wstring());
-            drawMetaRow(L"Title", pdf.title.empty() ? item.name : pdf.title);
+            std::wstring cleanTitle = pdf.title;
+            if (cleanTitle.empty() || cleanTitle == L"þÿ" || cleanTitle.find(0xFEFF) != std::wstring::npos || cleanTitle.find(L"þÿ") != std::wstring::npos) {
+                cleanTitle = item.name;
+            }
+            drawMetaRow(L"Title", cleanTitle);
             drawMetaRow(L"Author", pdf.author.empty() ? L"Not specified" : pdf.author);
             if (!pdf.creationDate.empty()) drawMetaRow(L"Created", pdf.creationDate);
             else drawMetaRow(L"Modified", formatTime(item.mtime));
